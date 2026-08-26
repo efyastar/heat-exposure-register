@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heat Exposure Register — Phoenix</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface-0:#f4f3f0; --surface-1:#fcfcfb; --surface-2:#eeede9;
+  --border:#dbdad4; --border-strong:#c2c1b9;
+  --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#77756e;
+  --series-1:#2a78d6;
+  --critical:#d03b3b; --serious:#ec835a; --warning:#fab219; --good:#0ca30c;
+  --seq-100:#cde2fb; --seq-250:#86b6ef; --seq-400:#3987e5;
+  --seq-550:#1c5cab; --seq-700:#0d366b;
+  --safe-fill:#0ca30c; --hot-fill:#d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0:#131312; --surface-1:#1a1a19; --surface-2:#232322;
+    --border:#333331; --border-strong:#4a4a47;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#93928a;
+    --series-1:#3987e5;
+    --seq-100:#0d366b; --seq-250:#184f95; --seq-400:#2a78d6;
+    --seq-550:#5598e7; --seq-700:#b7d3f6;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0:#131312; --surface-1:#1a1a19; --surface-2:#232322;
+  --border:#333331; --border-strong:#4a4a47;
+  --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#93928a;
+  --series-1:#3987e5;
+  --seq-100:#0d366b; --seq-250:#184f95; --seq-400:#2a78d6;
+  --seq-550:#5598e7; --seq-700:#b7d3f6;
+}
+
+* { box-sizing:border-box; }
+body { margin:0; background:var(--surface-0); color:var(--text-primary);
+  font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased; }
+.wrap { max-width:1120px; margin:0 auto; padding:26px 20px 80px; }
+h1 { font-size:22px; line-height:1.2; margin:0 0 4px; letter-spacing:-0.01em; }
+h2 { font-size:17px; margin:0 0 4px; letter-spacing:-0.005em; }
+p  { margin:0 0 12px; color:var(--text-secondary); }
+.sub { color:var(--text-secondary); font-size:13.5px; }
+.card { background:var(--surface-1); border:1px solid var(--border);
+  border-radius:12px; padding:20px; margin-bottom:18px; }
+.card > .head { margin-bottom:16px; }
+.card > .head p { margin:0; font-size:13.5px; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
+@media (max-width:820px){ .grid2 { grid-template-columns:1fr; } }
+.mono { font-variant-numeric:tabular-nums; }
+.topbar { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:16px; }
+
+/* ---- ACTION CARD ---- */
+.action { border:1px solid var(--border); border-radius:14px; overflow:hidden;
+          background:var(--surface-1); margin-bottom:18px; }
+.action .strip { height:5px; background:var(--critical); }
+.action .body { padding:22px 22px 20px; }
+.action .when { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+                color:var(--text-muted); font-weight:600; }
+.action .verdict { font-size:34px; line-height:1.15; font-weight:660;
+                   letter-spacing:-0.02em; margin:6px 0 8px; }
+.action .because { font-size:15px; color:var(--text-secondary); margin:0 0 18px; max-width:62ch; }
+.action .because strong { color:var(--text-primary); }
+.todo { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+        gap:1px; background:var(--border); border:1px solid var(--border);
+        border-radius:10px; overflow:hidden; }
+.todo .item { background:var(--surface-1); padding:13px 15px; }
+.todo .lbl { font-size:11.5px; text-transform:uppercase; letter-spacing:.05em;
+             color:var(--text-muted); font-weight:600; }
+.todo .val { font-size:17px; font-weight:600; margin-top:3px; }
+.todo .val small { font-weight:400; color:var(--text-secondary); font-size:13px; }
+
+/* hour strip */
+.hours { display:flex; gap:2px; margin:18px 0 6px; }
+.hours .h { flex:1; height:34px; border-radius:3px; position:relative;
+            background:var(--surface-2); cursor:default; }
+.hours .h.safe { background:var(--safe-fill); opacity:.72; }
+.hours .h.hot  { background:var(--hot-fill); }
+.hours .h.now  { outline:2px solid var(--text-primary); outline-offset:1px; }
+.hourlbl { display:flex; justify-content:space-between; font-size:11px;
+           color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.keys { display:flex; flex-wrap:wrap; gap:14px; font-size:12.5px;
+        color:var(--text-secondary); margin-top:12px; }
+.keys .item { display:inline-flex; align-items:center; gap:6px; }
+.swatch { width:11px; height:11px; border-radius:3px; }
+
+/* stats */
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+         background:var(--border); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+.stat { background:var(--surface-1); padding:14px 16px; }
+.stat .k { font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
+.stat .v { font-size:23px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:3px; }
+.stat .n { font-size:12px; color:var(--text-muted); margin-top:2px; }
+
+/* table */
+.tablewrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+table { width:100%; border-collapse:collapse; font-size:14px; min-width:680px; }
+th { text-align:left; font-size:11.5px; text-transform:uppercase; letter-spacing:.05em;
+     color:var(--text-muted); font-weight:600; padding:0 10px 8px; border-bottom:1px solid var(--border); }
+th.num, td.num { text-align:right; font-variant-numeric:tabular-nums; }
+td { padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+tbody tr:last-child td { border-bottom:none; }
+tbody tr { cursor:pointer; }
+tbody tr:hover td { background:var(--surface-2); }
+tbody tr[aria-selected="true"] td { background:var(--surface-2); box-shadow:inset 2px 0 0 var(--series-1); }
+.bar { position:relative; height:9px; background:var(--surface-2); border-radius:4px; min-width:60px; }
+.bar > span { position:absolute; inset:0 auto 0 0; background:var(--series-1); border-radius:4px; }
+.pill { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600;
+        padding:2px 8px; border-radius:999px; border:1px solid var(--border-strong); white-space:nowrap; }
+.pill .dot { width:7px; height:7px; border-radius:50%; }
+
+svg { display:block; width:100%; height:auto; overflow:visible; }
+.gridline { stroke:var(--border); stroke-dasharray:2 3; }
+.tip { position:fixed; pointer-events:none; opacity:0; transition:opacity .1s;
+  background:var(--surface-1); color:var(--text-primary);
+  border:1px solid var(--border-strong); border-radius:8px; padding:7px 10px;
+  font-size:12.5px; box-shadow:0 6px 20px rgba(0,0,0,.16); z-index:50;
+  font-variant-numeric:tabular-nums; max-width:250px; }
+
+.ctl { display:grid; grid-template-columns:1fr auto; gap:8px 14px; align-items:center; margin-bottom:12px; }
+.ctl label { font-size:13px; color:var(--text-secondary); }
+.ctl output { font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
+input[type=range] { width:100%; accent-color:var(--series-1); }
+button { font:inherit; font-size:13px; color:var(--text-primary); background:var(--surface-1);
+  border:1px solid var(--border-strong); border-radius:7px; padding:6px 10px; cursor:pointer; }
+button:hover { background:var(--surface-2); }
+
+.mapRow { display:flex; gap:18px; align-items:flex-start; flex-wrap:wrap; }
+.mapSide { flex:1 1 210px; min-width:190px; }
+.mapSide .stats { grid-template-columns:1fr; }
+#mapwrap { position:relative; border:1px solid var(--border); border-radius:9px;
+           overflow:hidden; background:var(--surface-2); flex:0 0 auto; }
+#map { display:block; width:100%; height:auto; }
+#pins { position:absolute; inset:0; pointer-events:none; }
+.ramp { display:flex; align-items:center; gap:9px; margin-top:10px; font-size:12px; color:var(--text-secondary); }
+.ramp .bar2 { flex:1; height:9px; border-radius:4px;
+  background:linear-gradient(90deg,var(--seq-100),var(--seq-250),var(--seq-400),var(--seq-550),var(--seq-700)); }
+
+.note { font-size:12.5px; color:var(--text-muted); margin-top:10px; }
+details { border-top:1px solid var(--border); padding-top:12px; margin-top:14px; }
+summary { cursor:pointer; font-size:13.5px; color:var(--text-secondary); font-weight:600; }
+details[open] summary { margin-bottom:10px; }
+.foot { color:var(--text-muted); font-size:12.5px; margin-top:26px; }
+.err { color:var(--critical); font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div>
+      <h1>Heat Exposure Register</h1>
+      <div class="sub" id="strap">Loading…</div>
+    </div>
+    <button id="theme" title="Toggle light/dark">◐</button>
+  </div>
+
+  <!-- ACTION -->
+  <section class="action" id="action">
+    <div class="strip" id="actionStrip"></div>
+    <div class="body">
+      <div class="when" id="actionWhen">—</div>
+      <div class="verdict" id="actionVerdict">—</div>
+      <p class="because" id="actionBecause"></p>
+      <div class="todo" id="actionTodo"></div>
+      <div class="hours" id="hourStrip"></div>
+      <div class="hourlbl"><span>midnight</span><span>6 AM</span><span>noon</span><span>6 PM</span><span>11 PM</span></div>
+      <div class="note" id="stripNote" style="margin-top:8px"></div>
+      <div class="keys">
+        <span class="item"><span class="swatch" style="background:var(--safe-fill);opacity:.72"></span>Safe to work</span>
+        <span class="item"><span class="swatch" style="background:var(--hot-fill)"></span>Dangerous — above <span id="thrKey"></span></span>
+        <span class="item"><span class="swatch" style="background:var(--surface-2);border:1px solid var(--border-strong)"></span>No data</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FORECAST -->
+  <section class="card">
+    <div class="head">
+      <h2>Next few hours</h2>
+      <p id="todaySub"></p>
+    </div>
+    <div id="forecastChart"></div>
+    <div class="note" id="forecastNote"></div>
+  </section>
+
+  <!-- REGISTER -->
+  <section class="card">
+    <div class="head">
+      <h2>Your sites, worst first</h2>
+      <p>How much dangerous heat each site gets on an average summer day, and what
+         that costs you.</p>
+    </div>
+    <div class="tablewrap">
+    <table id="register">
+      <thead>
+        <tr>
+          <th style="width:38px">#</th>
+          <th>Site</th>
+          <th style="width:22%">Dangerous heat</th>
+          <th class="num" style="width:120px">Hours per day</th>
+          <th class="num" style="width:120px">vs best site</th>
+          <th class="num" style="width:120px">Cost per season</th>
+          <th style="width:96px">Risk</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    </div>
+    <div class="keys">
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>Hours per day above threshold</span>
+      <span class="item"><span class="swatch" style="background:var(--critical);border-radius:50%"></span>Highest third</span>
+      <span class="item"><span class="swatch" style="background:var(--good);border-radius:50%"></span>Lowest third</span>
+    </div>
+    <div class="note" id="registerNote"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <div class="head">
+        <h2>How a hot day runs</h2>
+        <p id="profileSub"></p>
+      </div>
+      <div id="dayChart"></div>
+      <div class="note" id="dayNote"></div>
+    </section>
+
+    <section class="card">
+      <div class="head">
+        <h2>Where the heat sits</h2>
+        <p>Every measured tile across the area. Darker means more hours of dangerous heat.</p>
+      </div>
+      <div class="mapRow">
+        <div id="mapwrap"><canvas id="map"></canvas><svg id="pins"></svg></div>
+        <div class="mapSide">
+          <div class="ramp">
+            <span class="mono" id="rampMin">—</span><span class="bar2"></span><span class="mono" id="rampMax">—</span>
+          </div>
+          <div class="stats" id="mapStats" style="margin-top:14px"></div>
+          <div class="note">Circles are your sites; the selected one is highlighted.
+            The study area runs roughly 13 km north to south and 5 km across, which is
+            why the map is tall and narrow — that is its real shape.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- COST -->
+  <section class="card">
+    <div class="head">
+      <h2>What it costs</h2>
+      <p>Cost per case comes from published data. How often heat illness happens is
+         <strong>your estimate</strong> — change it and watch the totals move while the
+         order of your sites stays put.</p>
+    </div>
+    <div class="grid2">
+      <div>
+        <div class="ctl">
+          <label for="crew">Workers per site</label><output id="crewOut"></output>
+          <input type="range" id="crew" min="1" max="60" step="1" style="grid-column:1/-1">
+        </div>
+        <div class="ctl">
+          <label for="inc">Heat illness cases per 100 workers per summer, at average exposure</label>
+          <output id="incOut"></output>
+          <input type="range" id="inc" min="0" max="150" step="1" style="grid-column:1/-1">
+        </div>
+        <div class="ctl">
+          <label for="adm">Share of cases needing a hospital stay</label><output id="admOut"></output>
+          <input type="range" id="adm" min="0" max="100" step="1" style="grid-column:1/-1">
+        </div>
+        <div class="note" id="costNote"></div>
+      </div>
+      <div>
+        <div class="stats" id="costStats"></div>
+        <div class="note" style="margin-top:12px">
+          Each site is scaled by how much hotter it runs than average, then costed at a
+          blend of <span class="mono">$757</span> per emergency-room visit and
+          <span class="mono">$14,900</span> per hospital admission
+          (HCUP 2020, via the Center for American Progress).
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTEXT + METHOD -->
+  <section class="card">
+    <div class="head"><h2>Where these numbers come from</h2></div>
+    <p>Heat readings are 2&nbsp;m ambient air temperature at street resolution from
+       FortyGuard's Temperature API — the air a person actually stands in, not
+       ground-surface temperature and not an airport weather station miles away.
+       Each site's figure counts the hours it spends above the danger threshold
+       across <span id="ctxWindow">the study window</span>.</p>
+    <div class="stats" id="ctxStats" style="margin-bottom:6px"></div>
+
+    <details>
+      <summary>Why this tool measures exposure instead of simulating tree planting</summary>
+      <p>The original plan was a cooling simulator — move a canopy slider, predict the
+         temperature drop. We tested whether that was defensible before building it. It
+         was not.</p>
+      <p>We joined 7,347 tiles of measured heat to land cover from OpenStreetMap —
+         38,649 building footprints, 41,464 road segments, 810 green spaces — and trained
+         gradient-boosted models under <strong>spatial block cross-validation</strong>,
+         holding out whole districts so no model could memorise a neighbourhood and then
+         be graded on its next-door tile.</p>
+      <p>Coordinates alone reached R²&nbsp;0.85. Adding every land-cover feature changed
+         it by <strong>−0.009</strong>. Building fraction, green fraction and tree count
+         all scored zero permutation importance. Repeating it against pre-dawn
+         temperature, when urban heat island effects are strongest, gave the same answer:
+         <strong>−0.004</strong>.</p>
+      <p>At this resolution the data encodes <em>where</em> heat is, extremely well, but
+         not <em>why</em>. A canopy slider would have moved a number the data cannot
+         justify. So this tool reports exposure that was measured, and leaves causal
+         claims alone.</p>
+    </details>
+
+    <details>
+      <summary>Limits worth knowing</summary>
+      <p><strong>Forecasts are spatially flat.</strong> Spread across sites collapses with
+         horizon — 0.40&nbsp;°C at dawn, 0.11&nbsp;°C at +3&nbsp;h, 0.025&nbsp;°C at
+         +6&nbsp;h. Forecasts tell you how dangerous the next few hours are; they cannot
+         tell you which site is worse. Site ranking comes only from historical layers.</p>
+      <p><strong>The forecast window is shorter than documented, and it shrinks.</strong>
+         Advertised at 12 hours. Probing it at 7:31 AM reached 2 PM; probing again at
+         10 AM also reached 2 PM. It is a fixed afternoon cutoff, not a rolling horizon —
+         so by mid-afternoon there is no forecast left. Past the cutoff the API returns an
+         empty tile list with a <em>success</em> status rather than an error, so code that
+         does not check tile count would read that as "no heat anywhere."</p>
+      <p><strong>High thresholds degrade.</strong> At 43&nbsp;°C the exceedance layer
+         returned negative hours — interpolation past the edge of the data.
+         The threshold used here sits inside the reliable band.</p>
+      <p><strong>Incidence is assumed, not measured.</strong> Cost per case is well
+         documented; cases per hour of heat exposure is not established in the
+         literature. Absolute costs here are illustrative. The <em>difference between
+         sites</em> is the robust output, because one assumption applies to all of them.</p>
+      <p><strong>Demo sites are public locations</strong> spanning the city, standing in
+         for a contractor's real job list.</p>
+    </details>
+  </section>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<div class="tip" id="tip" role="status" aria-live="polite"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = (n,d=0) => n==null ? "—" : n.toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+const money = n => n==null ? "—" : "$" + Math.round(n).toLocaleString();
+const cssv = n => getComputedStyle(document.body).getPropertyValue(n).trim();
+const SVGNS="http://www.w3.org/2000/svg";
+const el=(t,a={})=>{const e=document.createElementNS(SVGNS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+/* US audience: Fahrenheit leads, Celsius in brackets where precision matters. */
+const F = c => c==null ? null : c*9/5+32;
+const degF = (c,d=0) => c==null ? "—" : `${fmt(F(c),d)} °F`;
+const degFC = (c,d=0) => c==null ? "—" : `${fmt(F(c),d)} °F (${fmt(c,d)} °C)`;
+const clock = h => h==null ? "—"
+  : h===0 ? "midnight" : h===12 ? "noon"
+  : h<12 ? `${h} AM` : `${h-12} PM`;
+
+let DATA=null, selected=null;
+const tip=$("#tip");
+function showTip(html,ev){ tip.innerHTML=html; tip.style.opacity=1;
+  const p=12; let x=ev.clientX+p,y=ev.clientY+p; const r=tip.getBoundingClientRect();
+  if(x+r.width>innerWidth-8) x=ev.clientX-r.width-p;
+  if(y+r.height>innerHeight-8) y=ev.clientY-r.height-p;
+  tip.style.left=x+"px"; tip.style.top=y+"px"; }
+function hideTip(){ tip.style.opacity=0; }
+
+$("#theme").onclick=()=>{
+  const cur=document.documentElement.getAttribute("data-theme");
+  const dark=cur?cur==="dark":matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme",dark?"light":"dark");
+  try{localStorage.setItem("theme",dark?"light":"dark");}catch(e){}
+  if(DATA) renderAll();
+};
+try{const t=localStorage.getItem("theme"); if(t) document.documentElement.setAttribute("data-theme",t);}catch(e){}
+
+fetch("data.json").then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+  .then(d=>{DATA=d; init();})
+  .catch(e=>{ $("#strap").innerHTML='<span class="err">Could not load data.json — '+e.message+'</span>'; });
+
+function init(){
+  const w=DATA.window||{};
+  $("#strap").textContent =
+    `Outdoor work in Phoenix, Arizona · exposure measured ${w.start} to ${w.end}`;
+  $("#thrKey").innerHTML = degF(DATA.threshold_c);
+  $("#ctxWindow").textContent = `${w.start} to ${w.end}`;
+  selected = DATA.sites[0];
+  $("#crew").value=8; $("#inc").value=30; $("#adm").value=20;
+  ["crew","inc","adm"].forEach(id=>$("#"+id).addEventListener("input",()=>{renderCosts();renderRegister();}));
+  renderAll();
+  addEventListener("resize",()=>{drawMap();renderDay();renderForecast();});
+}
+function renderAll(){
+  renderAction(); renderForecast(); renderRegister(); renderDay();
+  drawMap(); renderCosts(); renderContext(); renderFoot();
+}
+
+/* ---------- ACTION CARD: the whole point of the page ---------- */
+function renderAction(){
+  const thr=DATA.threshold_c, f=DATA.forecast;
+  const sites=DATA.sites.filter(s=>s.exc40!=null);
+  const worst=sites[0];
+  const times=f.times||[], vals=f.mean||[];
+
+  let verdict, because, strip, safeUntil=null, resumeAt=null;
+
+  if(times.length){
+    const nowH=+times[0].slice(11,13);
+    const firstHotIdx=vals.findIndex(v=>v>=thr);
+    if(firstHotIdx===-1){
+      strip=cssv("--good");
+      verdict="Safe to work today";
+      because=`Temperature stays below <strong>${degF(thr)}</strong> for the whole forecast
+               window. Normal schedule; keep water available.`;
+    } else if(firstHotIdx===0){
+      strip=cssv("--critical");
+      verdict="Stop outdoor work now";
+      const peak=Math.max(...vals);
+      because=`It is already <strong>${degF(vals[0],1)}</strong>, past the
+               <strong>${degF(thr)}</strong> danger line, and heading for
+               <strong>${degF(peak,0)}</strong> by ${clock(+times[vals.indexOf(peak)].slice(11,13))}.
+               Move crews to shade or indoor tasks; conditions ease after dark.`;
+    } else {
+      safeUntil=+times[firstHotIdx].slice(11,13);
+      strip=cssv("--warning");
+      verdict=`Work until ${clock(safeUntil)}`;
+      because=`Temperature crosses <strong>${degF(thr)}</strong> at
+               <strong>${clock(safeUntil)}</strong> and keeps climbing to
+               <strong>${degF(Math.max(...vals),0)}</strong>. Get outdoor work finished
+               before then.`;
+    }
+  } else {
+    strip=cssv("--text-muted");
+    verdict="No live forecast right now";
+    because=`The forecast feed returned nothing. The typical-day pattern below still
+             applies — plan around it.`;
+  }
+
+  // Typical-day window from the profile day, for the "resume" advice.
+  const w=worst.window;
+  if(w && w.end!=null) resumeAt=(w.end+1)%24;
+
+  $("#actionStrip").style.background=strip;
+  $("#actionWhen").textContent = times.length
+    ? new Date(times[0]+":00").toLocaleDateString(undefined,
+        {weekday:"long",month:"long",day:"numeric"}).toUpperCase()
+    : "TYPICAL SUMMER DAY";
+  $("#actionVerdict").textContent=verdict;
+  $("#actionBecause").innerHTML=because;
+
+  const perDayWorst = worst.exc40/DATA.window_days;
+  $("#actionTodo").innerHTML=[
+    ["Today", safeUntil!=null ? `Work until ${clock(safeUntil)}`
+        : (times.length ? verdict : "No forecast"),
+      times.length ? `from the ${times.length}-hour forecast` : "feed unavailable"],
+    ["On a typical hot day", w.start!=null?`Work before ${clock(w.start)}`:"All day",
+      w.start!=null?`safe again after ${clock(resumeAt)}`:"no dangerous hours"],
+    ["Check on first", worst.name, `${fmt(perDayWorst,1)} dangerous hours a day`],
+    ["Danger line", degF(thr), `${fmt(thr,0)} °C`],
+  ].map(([l,v,n])=>`<div class="item"><div class="lbl">${l}</div>
+      <div class="val">${v}<br><small>${n}</small></div></div>`).join("");
+
+  // 24-hour strip from the selected site's typical hot day
+  const strips=$("#hourStrip"); strips.innerHTML="";
+  const hourly=(selected||worst).hourly;
+  hourly.forEach((t,h)=>{
+    const d=document.createElement("div");
+    d.className="h "+(t==null?"":(t>=thr?"hot":"safe"));
+    if(safeUntil!=null && h===safeUntil) d.classList.add("now");
+    d.addEventListener("mousemove",ev=>showTip(
+      `<strong>${clock(h)}</strong><br>${degFC(t,0)}<br>`
+      +(t==null?"no data":t>=thr
+        ?`<span style="color:${cssv("--critical")}">dangerous</span>`
+        :`<span style="color:${cssv("--good")}">safe to work</span>`),ev));
+    d.addEventListener("mouseleave",hideTip);
+    strips.appendChild(d);
+  });
+  const site=(selected||worst);
+  $("#stripNote").innerHTML =
+    `Hour by hour at <strong>${site.name}</strong> on a typical hot day
+     (${DATA.profile_day}). Today's own forecast only reaches
+     ${times.length?times.length-1:0} hours ahead, so this pattern is what to plan the
+     rest of the shift around.`;
+}
+
+/* ---------- forecast ---------- */
+function renderForecast(){
+  const f=DATA.forecast, host=$("#forecastChart"); host.innerHTML="";
+  if(!f.times||!f.times.length){
+    host.innerHTML='<p class="err">No forecast hours available right now.</p>';
+    $("#todaySub").textContent="Forecast unavailable."; return;
+  }
+  const vals=f.mean, times=f.times, thr=DATA.threshold_c;
+  $("#todaySub").innerHTML =
+    `What the air temperature does over the next ${times.length} hours, averaged across
+     your sites. The dashed line is the ${degF(thr)} danger threshold.`;
+
+  const W=820,H=190,P={t:14,r:16,b:28,l:52};
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const lo=Math.min(...vals,thr)-1.2, hiV=Math.max(...vals,thr)+1.2;
+  const x=i=>P.l+(times.length===1?iw/2:i*iw/(times.length-1));
+  const y=v=>P.t+ih-(v-lo)/(hiV-lo)*ih;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img",
+    "aria-label":`Forecast temperature for the next ${times.length} hours`});
+
+  if(thr<hiV) svg.appendChild(el("rect",{x:P.l,y:P.t,width:iw,
+    height:Math.max(0,y(thr)-P.t),fill:cssv("--critical"),opacity:.07}));
+  for(let k=0;k<=3;k++){
+    const v=lo+(hiV-lo)*k/3;
+    svg.appendChild(el("line",{class:"gridline",x1:P.l,x2:W-P.r,y1:y(v),y2:y(v)}));
+    const t=el("text",{x:P.l-8,y:y(v)+4,"text-anchor":"end"});
+    t.textContent=Math.round(F(v))+"°F";
+    t.setAttribute("fill",cssv("--text-muted")); t.setAttribute("font-size","11"); svg.appendChild(t);
+  }
+  svg.appendChild(el("line",{x1:P.l,x2:W-P.r,y1:y(thr),y2:y(thr),
+    stroke:cssv("--critical"),"stroke-width":2,"stroke-dasharray":"5 4"}));
+  const tl=el("text",{x:W-P.r,y:y(thr)-7,"text-anchor":"end"});
+  tl.textContent=`${Math.round(F(thr))} °F — dangerous above this`;
+  tl.setAttribute("fill",cssv("--critical")); tl.setAttribute("font-size","11");
+  tl.setAttribute("font-weight","600"); svg.appendChild(tl);
+
+  svg.appendChild(el("path",{d:vals.map((v,i)=>(i?"L":"M")+x(i)+" "+y(v)).join(" "),
+    fill:"none",stroke:cssv("--series-1"),"stroke-width":2,
+    "stroke-linejoin":"round","stroke-linecap":"round"}));
+
+  vals.forEach((v,i)=>{
+    svg.appendChild(el("circle",{cx:x(i),cy:y(v),r:4.5,fill:cssv("--series-1"),
+      stroke:cssv("--surface-1"),"stroke-width":2}));
+    const hit=el("circle",{cx:x(i),cy:y(v),r:17,fill:"transparent"});
+    hit.addEventListener("mousemove",ev=>showTip(
+      `<strong>${clock(+times[i].slice(11,13))}</strong><br>${degFC(v,0)}`
+      +(v>=thr?`<br><span style="color:${cssv("--critical")}">dangerous</span>`:""),ev));
+    hit.addEventListener("mouseleave",hideTip); svg.appendChild(hit);
+    const lab=el("text",{x:x(i),y:H-P.b+16,"text-anchor":"middle"});
+    lab.textContent=clock(+times[i].slice(11,13));
+    lab.setAttribute("fill",cssv("--text-muted")); lab.setAttribute("font-size","11");
+    svg.appendChild(lab);
+  });
+  host.appendChild(svg);
+  const lastH=+times[times.length-1].slice(11,13);
+  $("#forecastNote").innerHTML =
+    `Forecast runs to <strong>${clock(lastH)}</strong> — ${times.length-1} hours from the
+     last update. Testing showed the provider's forecast stops at a fixed hour each
+     afternoon rather than always reaching a set number of hours ahead, so this window
+     shortens as the day goes on. Past the cutoff it returns an empty result with a
+     success status, so the page checks for that instead of reading it as zero heat.`;
+}
+
+/* ---------- register ---------- */
+function costFor(site){
+  const crew=+$("#crew").value, inc=+$("#inc").value/100, adm=+$("#adm").value/100;
+  const perCase=757*(1-adm)+14900*adm;
+  return crew*inc*(site.exc40/DATA.grid.mean)*perCase;
+}
+function renderRegister(){
+  const sites=DATA.sites.filter(s=>s.exc40!=null);
+  const D=DATA.window_days;
+  const max=Math.max(...sites.map(s=>s.exc40));
+  const hi=sites[0].exc40, lo=sites[sites.length-1].exc40;
+  const tb=$("#register tbody"); tb.innerHTML="";
+  sites.forEach(s=>{
+    // Tier by rank, not by normalised value: the sites cluster near the top, so a
+    // value-based split labels nearly everything "worst" and tells you nothing.
+    const third=sites.length/3;
+    const lvl = s.rank<=third ? ["critical","Highest"]
+              : s.rank<=third*2 ? ["serious","Elevated"]
+              : ["good","Lowest"];
+    const perDay=s.exc40/D, extra=(s.exc40-lo)/D;
+    const tr=document.createElement("tr");
+    tr.setAttribute("aria-selected", selected&&selected.id===s.id);
+    tr.innerHTML=
+      `<td class="mono" style="color:var(--text-muted)">${s.rank}</td>
+       <td>${s.name}</td>
+       <td><div class="bar"><span style="width:${(s.exc40/max*100).toFixed(1)}%"></span></div></td>
+       <td class="num mono">${fmt(perDay,1)} h</td>
+       <td class="num mono">${extra<0.05?"—":"+"+fmt(extra,1)+" h"}</td>
+       <td class="num mono">${money(costFor(s))}</td>
+       <td><span class="pill"><span class="dot" style="background:var(--${lvl[0]})"></span>${lvl[1]}</span></td>`;
+    tr.onclick=()=>{selected=s; renderRegister(); renderDay(); renderAction(); drawPins();};
+    tr.addEventListener("mousemove",ev=>showTip(
+      `<strong>${s.name}</strong><br>${fmt(perDay,1)} dangerous hours a day<br>`
+      +`${fmt(s.exc40,0)} hours across ${D} days<br>`
+      +(extra<0.05?"your coolest site":`${fmt(extra,1)} h/day more than your best site`),ev));
+    tr.addEventListener("mouseleave",hideTip);
+    tb.appendChild(tr);
+  });
+  $("#registerNote").innerHTML =
+    `Worst site runs <strong>${fmt((hi-lo)/D,1)} extra hours of dangerous heat every day</strong>
+     compared with your best — ${fmt(hi-lo,0)} hours across the ${D}-day window. Rotating crews
+     between them spreads that load instead of one team absorbing it all summer.`;
+}
+
+/* ---------- day profile ---------- */
+function renderDay(){
+  const host=$("#dayChart"); host.innerHTML="";
+  const s=selected; if(!s) return;
+  const vals=s.hourly, thr=DATA.threshold_c;
+  const have=vals.map((v,i)=>[i,v]).filter(p=>p[1]!=null);
+  if(!have.length){ host.innerHTML='<p class="err">No hourly data.</p>'; return; }
+  $("#profileSub").innerHTML =
+    `<strong>${s.name}</strong> on a hot day (${DATA.profile_day}). Red band is time above
+     ${degF(thr)}.`;
+
+  const W=520,H=230,P={t:14,r:14,b:30,l:48};
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const lo=Math.min(...have.map(p=>p[1]))-1, hiV=Math.max(...have.map(p=>p[1]),thr)+1;
+  const x=h=>P.l+h*iw/23, y=v=>P.t+ih-(v-lo)/(hiV-lo)*ih;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img",
+    "aria-label":`Hourly temperature at ${s.name}`});
+
+  if(thr<hiV) svg.appendChild(el("rect",{x:P.l,y:P.t,width:iw,
+    height:Math.max(0,y(thr)-P.t),fill:cssv("--critical"),opacity:.07}));
+  for(let k=0;k<=3;k++){
+    const v=lo+(hiV-lo)*k/3;
+    svg.appendChild(el("line",{class:"gridline",x1:P.l,x2:W-P.r,y1:y(v),y2:y(v)}));
+    const t=el("text",{x:P.l-7,y:y(v)+4,"text-anchor":"end"});
+    t.textContent=Math.round(F(v))+"°F";
+    t.setAttribute("fill",cssv("--text-muted")); t.setAttribute("font-size","11"); svg.appendChild(t);
+  }
+  svg.appendChild(el("line",{x1:P.l,x2:W-P.r,y1:y(thr),y2:y(thr),
+    stroke:cssv("--critical"),"stroke-width":2,"stroke-dasharray":"5 4"}));
+  svg.appendChild(el("path",{d:have.map((p,i)=>(i?"L":"M")+x(p[0])+" "+y(p[1])).join(" "),
+    fill:"none",stroke:cssv("--series-1"),"stroke-width":2,
+    "stroke-linejoin":"round","stroke-linecap":"round"}));
+  [0,6,12,18,23].forEach(h=>{
+    const t=el("text",{x:x(h),y:H-P.b+16,"text-anchor":"middle"});
+    t.textContent=h===0?"12 AM":h===12?"12 PM":h<12?h+" AM":(h-12)+" PM";
+    t.setAttribute("fill",cssv("--text-muted")); t.setAttribute("font-size","11"); svg.appendChild(t);
+  });
+  have.forEach(([h,v])=>{
+    const hit=el("rect",{x:x(h)-iw/46,y:P.t,width:iw/23,height:ih,fill:"transparent"});
+    hit.addEventListener("mousemove",ev=>showTip(
+      `<strong>${clock(h)}</strong><br>${degFC(v,0)}`
+      +(v>=thr?`<br><span style="color:${cssv("--critical")}">dangerous</span>`:""),ev));
+    hit.addEventListener("mouseleave",hideTip); svg.appendChild(hit);
+  });
+  host.appendChild(svg);
+  const w=s.window;
+  $("#dayNote").innerHTML = w.start!=null
+    ? `Dangerous from <strong>${clock(w.start)}</strong> to <strong>${clock(w.end)}</strong>
+       — ${w.hours} hours. A crew that starts at first light and finishes by
+       ${clock(w.start)} misses the whole window.`
+    : `This site stayed below ${degF(thr)} all day.`;
+}
+
+/* ---------- map ---------- */
+function rampColor(t){
+  const stops=[cssv("--seq-100"),cssv("--seq-250"),cssv("--seq-400"),
+               cssv("--seq-550"),cssv("--seq-700")].map(h=>{
+    const x=h.replace("#",""); return [parseInt(x.slice(0,2),16),
+      parseInt(x.slice(2,4),16),parseInt(x.slice(4,6),16)];});
+  t=Math.max(0,Math.min(1,t));
+  const f=t*(stops.length-1), i=Math.min(stops.length-2,Math.floor(f)), k=f-i;
+  const c=stops[i].map((v,j)=>Math.round(v+(stops[i+1][j]-v)*k));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+let mapBox=null;
+function drawMap(){
+  const g=DATA.grid, cv=$("#map"), wrap=$("#mapwrap");
+  const avail=(wrap.parentElement.clientWidth||700);
+  const lon0=Math.min(...g.lon)-g.dlon/2, lon1=Math.max(...g.lon)+g.dlon/2;
+  const lat0=Math.min(...g.lat)-g.dlat/2, lat1=Math.max(...g.lat)+g.dlat/2;
+  const aspect=((lat1-lat0)*111)/((lon1-lon0)*92.5);
+  // This AOI is long and narrow; without a cap the map runs a thousand pixels tall.
+  const MAXH=520;
+  let cw=Math.min(avail, Math.round(MAXH/aspect));
+  let ch=Math.round(cw*aspect);
+  wrap.style.width=cw+"px";
+  const dpr=devicePixelRatio||1;
+  cv.width=cw*dpr; cv.height=ch*dpr;
+  cv.style.width=cw+"px"; cv.style.height=ch+"px";
+  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
+  ctx.fillStyle=cssv("--surface-2"); ctx.fillRect(0,0,cw,ch);
+  const X=l=>(l-lon0)/(lon1-lon0)*cw, Y=l=>ch-(l-lat0)/(lat1-lat0)*ch;
+  const tw=Math.ceil(g.dlon/(lon1-lon0)*cw)+1, th=Math.ceil(g.dlat/(lat1-lat0)*ch)+1;
+  const range=(g.max-g.min)||1;
+  for(let i=0;i<g.val.length;i++){
+    ctx.fillStyle=rampColor((g.val[i]-g.min)/range);
+    ctx.fillRect(X(g.lon[i])-tw/2, Y(g.lat[i])-th/2, tw, th);
+  }
+  mapBox={cw,ch,lon0,lon1,lat0,lat1};
+  const D=DATA.window_days;
+  $("#rampMin").textContent=fmt(g.min/D,1)+" h/day";
+  $("#rampMax").textContent=fmt(g.max/D,1)+" h/day";
+  const ms=$("#mapStats");
+  if(ms) ms.innerHTML=[
+    ["Hottest ground", fmt(g.max/D,1)+" h/day", "dangerous hours, daily"],
+    ["Coolest ground", fmt(g.min/D,1)+" h/day", "same city, same days"],
+    ["Difference", fmt((g.max-g.min)/D,1)+" h/day", "purely from location"],
+  ].map(([k,v,n])=>`<div class="stat"><div class="k">${k}</div>
+     <div class="v mono">${v}</div><div class="n">${n}</div></div>`).join("");
+  drawPins();
+}
+function drawPins(){
+  if(!mapBox) return;
+  const {cw,ch,lon0,lon1,lat0,lat1}=mapBox;
+  const svg=$("#pins"); svg.setAttribute("viewBox",`0 0 ${cw} ${ch}`); svg.innerHTML="";
+  DATA.sites.filter(s=>s.exc40!=null).forEach(s=>{
+    const cx=(s.lon-lon0)/(lon1-lon0)*cw, cy=ch-(s.lat-lat0)/(lat1-lat0)*ch;
+    const on=selected&&selected.id===s.id;
+    svg.appendChild(el("circle",{cx,cy,r:on?7:4.5,
+      fill:on?cssv("--critical"):cssv("--surface-1"),
+      stroke:on?cssv("--surface-1"):cssv("--text-primary"),"stroke-width":2}));
+  });
+}
+
+/* ---------- costs / context ---------- */
+function renderCosts(){
+  const crew=+$("#crew").value, inc=+$("#inc").value, adm=+$("#adm").value;
+  $("#crewOut").textContent=crew; $("#incOut").textContent=inc+" per 100";
+  $("#admOut").textContent=adm+"%";
+  const sites=DATA.sites.filter(s=>s.exc40!=null);
+  const costs=sites.map(costFor);
+  const perCase=757*(1-adm/100)+14900*(adm/100);
+  $("#costStats").innerHTML=[
+    ["All sites", money(costs.reduce((a,b)=>a+b,0)), `${sites.length} sites × ${crew} workers`],
+    ["Worst vs best site", money(Math.max(...costs)-Math.min(...costs)), "per site, per summer"],
+    ["Average cost per case", money(perCase), `${adm}% need a hospital stay`],
+  ].map(([k,v,n])=>`<div class="stat"><div class="k">${k}</div>
+     <div class="v mono">${v}</div><div class="n">${n}</div></div>`).join("");
+  $("#costNote").innerHTML =
+    `Drag the middle slider: every dollar figure changes, but the order of your sites
+     never does. The ranking is what the measured data supports — the dollar level is
+     your input.`;
+}
+function renderContext(){
+  const g=DATA.grid, D=DATA.window_days;
+  $("#ctxStats").innerHTML=[
+    ["Coolest ground", fmt(g.min/D,1)+" h/day", "hours above the danger line"],
+    ["Hottest ground", fmt(g.max/D,1)+" h/day", "same city, same days"],
+    ["Difference", fmt((g.max-g.min)/D,1)+" h/day", "purely from location"],
+    ["Tiles measured", fmt(g.n,0), "about 100 m across"],
+  ].map(([k,v,n])=>`<div class="stat"><div class="k">${k}</div>
+     <div class="v mono">${v}</div><div class="n">${n}</div></div>`).join("");
+}
+function renderFoot(){
+  const g=DATA.generated_at?new Date(DATA.generated_at):null;
+  $("#foot").innerHTML =
+    `Data generated ${g?g.toLocaleString():"—"} · ${fmt(DATA.grid.n,0)} tiles at about 100 m ·
+     temperatures are 2 m ambient air, shown in °F · built on the FortyGuard Temperature
+     API for Hackathon'26.`;
+}
+</script>
+</body>
+</html>

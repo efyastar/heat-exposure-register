@@ -1,0 +1,23 @@
+# Secrets — never commit
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Cached API + OSM downloads (regenerate with the build scripts)
+osm_cache/
+outputs/
+
+# Large intermediates. web/data.json IS committed — the demo needs it.
+grid_exc40.geojson
+phoenix_exc40.geojson
+tile_features.csv
+tile_features_night.csv
+tile_predictions.csv
+heat_model.joblib
+
+# macOS
+.DS_Store
