@@ -48,15 +48,15 @@ does not exist.
 
 ---
 
-## What we tested and rejected
+## What I tested and rejected
 
 **The original plan was a cooling simulator**: move a tree-canopy slider, predict
 the temperature drop, cost the intervention. It is one of the example projects
 in the track brief, and it demos well.
 
-We tested whether it was defensible before building it. It was not.
+I tested whether it was defensible before building it. It was not.
 
-We joined **7,347 tiles** of measured temperature to land cover from
+I joined **7,347 tiles** of measured temperature to land cover from
 OpenStreetMap — 38,649 building footprints, 41,464 road segments, 810 green
 spaces, 9,906 mapped trees — and trained gradient-boosted regressors under
 **spatial block cross-validation**, partitioning the city into 36 blocks and
@@ -76,7 +76,7 @@ Permutation importance: `lat` +1.95, `lon` +0.45, and every land-cover feature a
 38,649 mapped buildings — scored **zero**.
 
 Suspecting that daytime heat masks the effect (cities are most thermally uniform
-at peak sun, and the urban heat island is a nocturnal phenomenon), we repeated
+at peak sun, and the urban heat island is a nocturnal phenomenon), I repeated
 the whole test against **pre-dawn temperature**, where the effect should be
 strongest. Same answer: **−0.004**.
 
@@ -91,9 +91,9 @@ Reproduce it: `python3 build_features.py && python3 train_model.py`.
 
 ---
 
-## What we learned about the API
+## What I found in the API
 
-Findings from probing, not from the documentation. Each one changed the build.
+Things I found by probing rather than reading the docs. Each one changed the build.
 
 **Study-area size decides whether there is any signal at all.** A 2 km box in
 central Phoenix showed 0.08 °C of spread across 7,072 tiles — nothing to model
@@ -117,19 +117,25 @@ meaningful safety line (104 °F).
 reached 14:00. It is a **fixed afternoon cutoff, not a rolling horizon** — by
 mid-afternoon there is no forecast left at all.
 
-**Beyond that cutoff the API fails silently.** The request succeeds, status reads
-`completed`, `stats_data` comes back with `activity_id` and `n_cells` — and zero
-tiles. No error. Code that does not explicitly check tile count reads that as *"no
-heat anywhere."* Every call in this project checks.
+**Beyond that cutoff the API returns empty rather than erroring.** The request
+succeeds, status reads `completed`, `stats_data` comes back with `activity_id` and
+`n_cells` — and zero tiles. Hackathon support confirmed this is intended: the
+request is valid, there is simply no data for that time, so it is a "no data here"
+response rather than a failure. It is still easy to misread — code that does not
+check `map_data.features.length` treats it as *"no heat anywhere."* Every call in
+this project checks tile count before using a response.
 
 **Forecast layers are spatially flat.** Spread collapses with horizon: 0.40 °C at
 dawn, 0.11 °C at +3 h, 0.025 °C at +6 h. Forecasts can say how dangerous the next
 few hours are; they cannot say which site is worse. Site ranking therefore uses
 only historical layers — a deliberate split, not an oversight.
 
-**The docs contradict themselves on units.** The client docstring says heatmap
-tiles are Fahrenheit; the repository README says the API returns Celsius
-exclusively. Empirically: **Celsius**. Phoenix in August returned ~42, not ~108.
+**The docs contradict themselves on units.** The quickstart client's docstring says
+heatmap tiles are Fahrenheit; the repository README says Celsius exclusively.
+Empirically it is **Celsius** — Phoenix in August returned ~42, not ~108 — and
+support confirmed the docstring is the error. Worth flagging because `threshold` is
+documented in °C, so reading tiles as °F would corrupt every exceedance result
+without raising anything.
 
 **`env_params` heat index is not a diurnal curve.** It holds temperature fixed and
 varies only humidity, so it peaks around 2 a.m. and produced a 159 °F reading at
@@ -147,14 +153,14 @@ Cost per case is well documented. Incidence per hour of heat exposure is not.
 (HCUP 2020, via the Center for American Progress.)
 
 The dose-response link — how many extra illness cases result from X extra hours
-above a threshold — is **not established in the literature**. We looked. So the
+above a threshold — is **not established in the literature**. I looked. So the
 tool does not pretend to know it: incidence is a slider the user sets, defaulted
 and labelled as an assumption.
 
 What survives that uncertainty is the **comparison**. One assumption applies to
 every site, so the ranking and the ratios between sites hold regardless of where
 the slider sits. Drag it in the app and watch the absolute dollars move while the
-order never changes. That is the output we stand behind; the level is the user's
+order never changes. That is the output I stand behind; the level is the user's
 input.
 
 ---
@@ -164,7 +170,7 @@ input.
 | Source | Used for | Access |
 |---|---|---|
 | FortyGuard Temperature API | 2 m ambient air temperature, street resolution | Hackathon key |
-| OpenStreetMap (via osmnx) | Land cover, for the model we rejected | Open, ODbL |
+| OpenStreetMap (via osmnx) | Land cover, for the model I rejected | Open, ODbL |
 | HCUP 2020 via CAP | Cost per heat illness case | Public |
 
 Study area: ~62 km² of Phoenix, roughly 13 km north–south by 5 km across, at 100 m
@@ -241,8 +247,7 @@ Terciles by rank are honest about relative position.
 The `fortyguard/` package is FortyGuard's own API client, vendored unchanged from
 their [Temperature API Quickstart](https://github.com/FortyGuard-Tech/temperature-api-quickstart)
 so this repository runs standalone. Everything else — the data pipeline, the
-model and its evaluation, the cost layer and the interface — is this project's
-own work.
+model and its evaluation, the cost layer and the interface — is my own work.
 
 ## Limitations
 

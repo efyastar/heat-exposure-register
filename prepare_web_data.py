@@ -20,7 +20,8 @@ GRID_PATH = os.environ.get("GRID", "grid_exc40.geojson")
 OUT_DIR = os.environ.get("OUT_DIR", "web")
 OUT_PATH = os.path.join(OUT_DIR, "data.json")
 
-THRESHOLD_C = 40.0
+# No longer hardcoded — build_site_data.py picks it from the observed data.
+FALLBACK_THRESHOLD_C = 40.0
 
 
 def centroid(geom):
@@ -37,7 +38,7 @@ def tile_size(geom):
     return max(xs) - min(xs), max(ys) - min(ys)
 
 
-def danger_window(hourly, threshold=THRESHOLD_C):
+def danger_window(hourly, threshold):
     """First and last hour at or above the threshold, and the count."""
     hot = [h for h, t in enumerate(hourly) if t is not None and t >= threshold]
     if not hot:
@@ -53,28 +54,44 @@ def main():
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
+    # --- thresholds --------------------------------------------------------
+    threshold = sd.get("threshold_c") or FALLBACK_THRESHOLD_C
+    context = sd.get("context_threshold_c")
+    exposure = sd.get("exposure", {})
+
+    primary_map = exposure.get(str(threshold), {})
+    if not primary_map:                       # tolerate 40 vs 40.0 key formatting
+        for k, v in exposure.items():
+            if abs(float(k) - threshold) < 1e-6:
+                primary_map = v
+                break
+    context_map = exposure.get(str(context), {}) if context is not None else {}
+
+    print(f"threshold: {threshold} C"
+          + (f"  (observed peak {sd['peak_observed_c']} C)"
+             if sd.get("peak_observed_c") else "  (fixed)"))
+
     # --- sites -------------------------------------------------------------
-    exc40 = sd["exposure"].get("40.0", {})
-    exc38 = sd["exposure"].get("38.0", {})
     hourly_raw = sd.get("hourly", {})
 
     sites = []
     for s in sd["sites"]:
         hourly = [hourly_raw.get(f"{h:02d}", {}).get(s["id"]) for h in range(24)]
+        pv, cv = primary_map.get(s["id"]), context_map.get(s["id"])
         sites.append({
             "id": s["id"],
             "name": s["name"],
             "lat": s["lat"],
             "lon": s["lon"],
-            "exc40": round(exc40.get(s["id"]), 2) if exc40.get(s["id"]) is not None else None,
-            "exc38": round(exc38.get(s["id"]), 2) if exc38.get(s["id"]) is not None else None,
+            "exc": round(pv, 2) if pv is not None else None,
+            "exc_ctx": round(cv, 2) if cv is not None else None,
             "hourly": [round(t, 2) if t is not None else None for t in hourly],
-            "window": danger_window(hourly),
+            "window": danger_window(hourly, threshold),
         })
 
     ranked = sorted(
-        [s for s in sites if s["exc40"] is not None],
-        key=lambda s: s["exc40"], reverse=True,
+        [s for s in sites if s["exc"] is not None],
+        key=lambda s: s["exc"], reverse=True,
     )
     for i, s in enumerate(ranked):
         s["rank"] = i + 1
@@ -124,9 +141,11 @@ def main():
     out = {
         "generated_at": sd.get("generated_at"),
         "window": win,
-        "window_days": 31,
+        "window_days": sd.get("window_days", 31),
         "profile_day": sd.get("profile_day"),
-        "threshold_c": THRESHOLD_C,
+        "threshold_c": threshold,
+        "context_threshold_c": context,
+        "peak_observed_c": sd.get("peak_observed_c"),
         "sites": ranked + [s for s in sites if s.get("rank") is None],
         "forecast": forecast,
         "grid": grid_out,
@@ -150,16 +169,16 @@ def main():
     print(f"  hourly   : {sum(1 for h in ranked[0]['hourly'] if h is not None)}/24 "
           f"for {ranked[0]['name']}")
     print()
-    print("  rank  site                                  hours>40C   danger window")
+    print(f"  rank  site                                  hours>{threshold}C   danger window")
     for s in out["sites"]:
         w = s["window"]
         span = (f"{w['start']:02d}:00-{w['end']:02d}:00 ({w['hours']}h)"
                 if w["start"] is not None else "none")
-        per_day = s["exc40"] / out["window_days"]
-        print(f"  {s.get('rank', '-'):>4}  {s['name']:<36}  {s['exc40']:>8.1f}"
+        per_day = s["exc"] / out["window_days"]
+        print(f"  {s.get('rank', '-'):>4}  {s['name']:<36}  {s['exc']:>8.1f}"
               f"  ({per_day:.2f}/day)   {span}")
-    lo = min(s["exc40"] for s in out["sites"] if s["exc40"] is not None)
-    hi = max(s["exc40"] for s in out["sites"] if s["exc40"] is not None)
+    lo = min(s["exc"] for s in out["sites"] if s["exc"] is not None)
+    hi = max(s["exc"] for s in out["sites"] if s["exc"] is not None)
     gr = grid_out["max"] - grid_out["min"]
     print(f"\n  register spans {hi - lo:.1f} h "
           f"({(hi - lo) / out['window_days']:.2f} h/day) — "

@@ -137,6 +137,24 @@ button:hover { background:var(--surface-2); }
            overflow:hidden; background:var(--surface-2); flex:0 0 auto; }
 #map { display:block; width:100%; height:auto; }
 #pins { position:absolute; inset:0; pointer-events:none; }
+.lookup { margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
+.lkhead { font-size:11.5px; text-transform:uppercase; letter-spacing:.05em;
+          color:var(--text-muted); font-weight:600; margin-bottom:8px; }
+.lkrow { display:flex; gap:6px; }
+.lkrow input { flex:1; min-width:0; font:inherit; font-size:13px;
+  color:var(--text-primary); background:var(--surface-1);
+  border:1px solid var(--border-strong); border-radius:7px; padding:6px 9px; }
+.lkrow input:focus { outline:2px solid var(--series-1); outline-offset:-1px; }
+#lkResult:empty { display:none; }
+#lkResult { margin-top:12px; border:1px solid var(--border-strong);
+  border-radius:9px; padding:12px 13px; background:var(--surface-2); }
+#lkResult .big { font-size:24px; font-weight:650; font-variant-numeric:tabular-nums;
+  letter-spacing:-0.01em; }
+#lkResult .lbl { font-size:12px; color:var(--text-muted); }
+#lkResult .row { font-size:13px; color:var(--text-secondary); margin-top:6px; }
+#lkResult .row strong { color:var(--text-primary); }
+#lkResult .warn { color:var(--critical); font-size:12.5px; margin-top:6px; }
+#mapwrap { cursor:crosshair; }
 .ramp { display:flex; align-items:center; gap:9px; margin-top:10px; font-size:12px; color:var(--text-secondary); }
 .ramp .bar2 { flex:1; height:9px; border-radius:4px;
   background:linear-gradient(90deg,var(--seq-100),var(--seq-250),var(--seq-400),var(--seq-550),var(--seq-700)); }
@@ -242,6 +260,18 @@ details[open] summary { margin-bottom:10px; }
             <span class="mono" id="rampMin">—</span><span class="bar2"></span><span class="mono" id="rampMax">—</span>
           </div>
           <div class="stats" id="mapStats" style="margin-top:14px"></div>
+
+          <div class="lookup">
+            <div class="lkhead">Check any location</div>
+            <div class="lkrow">
+              <input type="text" id="lkInput" placeholder="33.4484, -112.0740"
+                     aria-label="Latitude and longitude">
+              <button id="lkGo">Check</button>
+            </div>
+            <div class="note" style="margin-top:6px">Or click anywhere on the map.</div>
+            <div id="lkResult"></div>
+          </div>
+
           <div class="note">Circles are your sites; the selected one is highlighted.
             The study area runs roughly 13 km north to south and 5 km across, which is
             why the map is tall and narrow — that is its real shape.</div>
@@ -295,14 +325,15 @@ details[open] summary { margin-bottom:10px; }
        ground-surface temperature and not an airport weather station miles away.
        Each site's figure counts the hours it spends above the danger threshold
        across <span id="ctxWindow">the study window</span>.</p>
+    <p id="thrExplain"></p>
     <div class="stats" id="ctxStats" style="margin-bottom:6px"></div>
 
     <details>
       <summary>Why this tool measures exposure instead of simulating tree planting</summary>
       <p>The original plan was a cooling simulator — move a canopy slider, predict the
-         temperature drop. We tested whether that was defensible before building it. It
+         temperature drop. I tested whether that was defensible before building it. It
          was not.</p>
-      <p>We joined 7,347 tiles of measured heat to land cover from OpenStreetMap —
+      <p>I joined 7,347 tiles of measured heat to land cover from OpenStreetMap —
          38,649 building footprints, 41,464 road segments, 810 green spaces — and trained
          gradient-boosted models under <strong>spatial block cross-validation</strong>,
          holding out whole districts so no model could memorise a neighbourhood and then
@@ -327,9 +358,10 @@ details[open] summary { margin-bottom:10px; }
       <p><strong>The forecast window is shorter than documented, and it shrinks.</strong>
          Advertised at 12 hours. Probing it at 7:31 AM reached 2 PM; probing again at
          10 AM also reached 2 PM. It is a fixed afternoon cutoff, not a rolling horizon —
-         so by mid-afternoon there is no forecast left. Past the cutoff the API returns an
-         empty tile list with a <em>success</em> status rather than an error, so code that
-         does not check tile count would read that as "no heat anywhere."</p>
+         so by mid-afternoon there is no forecast left. Past the cutoff it returns an empty tile
+         list with a <em>success</em> status — intended behaviour, since the request is
+         valid and there is simply no data for that time, but easy to misread as "no heat
+         anywhere" if you do not check tile count. This page checks.</p>
       <p><strong>High thresholds degrade.</strong> At 43&nbsp;°C the exceedance layer
          returned negative hours — interpolation past the edge of the data.
          The threshold used here sits inside the reliable band.</p>
@@ -405,7 +437,7 @@ function renderAll(){
 /* ---------- ACTION CARD: the whole point of the page ---------- */
 function renderAction(){
   const thr=DATA.threshold_c, f=DATA.forecast;
-  const sites=DATA.sites.filter(s=>s.exc40!=null);
+  const sites=DATA.sites.filter(s=>s.exc!=null);
   const worst=sites[0];
   const times=f.times||[], vals=f.mean||[];
 
@@ -455,7 +487,7 @@ function renderAction(){
   $("#actionVerdict").textContent=verdict;
   $("#actionBecause").innerHTML=because;
 
-  const perDayWorst = worst.exc40/DATA.window_days;
+  const perDayWorst = worst.exc/DATA.window_days;
   $("#actionTodo").innerHTML=[
     ["Today", safeUntil!=null ? `Work until ${clock(safeUntil)}`
         : (times.length ? verdict : "No forecast"),
@@ -550,20 +582,21 @@ function renderForecast(){
      last update. Testing showed the provider's forecast stops at a fixed hour each
      afternoon rather than always reaching a set number of hours ahead, so this window
      shortens as the day goes on. Past the cutoff it returns an empty result with a
-     success status, so the page checks for that instead of reading it as zero heat.`;
+     success status rather than an error, so the page checks tile count instead of
+     reading an empty response as zero heat.`;
 }
 
 /* ---------- register ---------- */
 function costFor(site){
   const crew=+$("#crew").value, inc=+$("#inc").value/100, adm=+$("#adm").value/100;
   const perCase=757*(1-adm)+14900*adm;
-  return crew*inc*(site.exc40/DATA.grid.mean)*perCase;
+  return crew*inc*(site.exc/DATA.grid.mean)*perCase;
 }
 function renderRegister(){
-  const sites=DATA.sites.filter(s=>s.exc40!=null);
+  const sites=DATA.sites.filter(s=>s.exc!=null);
   const D=DATA.window_days;
-  const max=Math.max(...sites.map(s=>s.exc40));
-  const hi=sites[0].exc40, lo=sites[sites.length-1].exc40;
+  const max=Math.max(...sites.map(s=>s.exc));
+  const hi=sites[0].exc, lo=sites[sites.length-1].exc;
   const tb=$("#register tbody"); tb.innerHTML="";
   sites.forEach(s=>{
     // Tier by rank, not by normalised value: the sites cluster near the top, so a
@@ -572,13 +605,13 @@ function renderRegister(){
     const lvl = s.rank<=third ? ["critical","Highest"]
               : s.rank<=third*2 ? ["serious","Elevated"]
               : ["good","Lowest"];
-    const perDay=s.exc40/D, extra=(s.exc40-lo)/D;
+    const perDay=s.exc/D, extra=(s.exc-lo)/D;
     const tr=document.createElement("tr");
     tr.setAttribute("aria-selected", selected&&selected.id===s.id);
     tr.innerHTML=
       `<td class="mono" style="color:var(--text-muted)">${s.rank}</td>
        <td>${s.name}</td>
-       <td><div class="bar"><span style="width:${(s.exc40/max*100).toFixed(1)}%"></span></div></td>
+       <td><div class="bar"><span style="width:${(s.exc/max*100).toFixed(1)}%"></span></div></td>
        <td class="num mono">${fmt(perDay,1)} h</td>
        <td class="num mono">${extra<0.05?"—":"+"+fmt(extra,1)+" h"}</td>
        <td class="num mono">${money(costFor(s))}</td>
@@ -586,7 +619,7 @@ function renderRegister(){
     tr.onclick=()=>{selected=s; renderRegister(); renderDay(); renderAction(); drawPins();};
     tr.addEventListener("mousemove",ev=>showTip(
       `<strong>${s.name}</strong><br>${fmt(perDay,1)} dangerous hours a day<br>`
-      +`${fmt(s.exc40,0)} hours across ${D} days<br>`
+      +`${fmt(s.exc,0)} hours across ${D} days<br>`
       +(extra<0.05?"your coolest site":`${fmt(extra,1)} h/day more than your best site`),ev));
     tr.addEventListener("mouseleave",hideTip);
     tb.appendChild(tr);
@@ -702,13 +735,26 @@ function drawPins(){
   if(!mapBox) return;
   const {cw,ch,lon0,lon1,lat0,lat1}=mapBox;
   const svg=$("#pins"); svg.setAttribute("viewBox",`0 0 ${cw} ${ch}`); svg.innerHTML="";
-  DATA.sites.filter(s=>s.exc40!=null).forEach(s=>{
+  DATA.sites.filter(s=>s.exc!=null).forEach(s=>{
     const cx=(s.lon-lon0)/(lon1-lon0)*cw, cy=ch-(s.lat-lat0)/(lat1-lat0)*ch;
     const on=selected&&selected.id===s.id;
     svg.appendChild(el("circle",{cx,cy,r:on?7:4.5,
       fill:on?cssv("--critical"):cssv("--surface-1"),
       stroke:on?cssv("--surface-1"):cssv("--text-primary"),"stroke-width":2}));
   });
+  if(queryPt){
+    const cx=(queryPt.lon-lon0)/(lon1-lon0)*cw, cy=ch-(queryPt.lat-lat0)/(lat1-lat0)*ch;
+    const g=el("g",{});
+    g.appendChild(el("line",{x1:cx-9,x2:cx+9,y1:cy,y2:cy,
+      stroke:cssv("--surface-1"),"stroke-width":4}));
+    g.appendChild(el("line",{x1:cx,x2:cx,y1:cy-9,y2:cy+9,
+      stroke:cssv("--surface-1"),"stroke-width":4}));
+    g.appendChild(el("line",{x1:cx-9,x2:cx+9,y1:cy,y2:cy,
+      stroke:cssv("--text-primary"),"stroke-width":2}));
+    g.appendChild(el("line",{x1:cx,x2:cx,y1:cy-9,y2:cy+9,
+      stroke:cssv("--text-primary"),"stroke-width":2}));
+    svg.appendChild(g);
+  }
 }
 
 /* ---------- costs / context ---------- */
@@ -716,7 +762,7 @@ function renderCosts(){
   const crew=+$("#crew").value, inc=+$("#inc").value, adm=+$("#adm").value;
   $("#crewOut").textContent=crew; $("#incOut").textContent=inc+" per 100";
   $("#admOut").textContent=adm+"%";
-  const sites=DATA.sites.filter(s=>s.exc40!=null);
+  const sites=DATA.sites.filter(s=>s.exc!=null);
   const costs=sites.map(costFor);
   const perCase=757*(1-adm/100)+14900*(adm/100);
   $("#costStats").innerHTML=[
@@ -732,6 +778,19 @@ function renderCosts(){
 }
 function renderContext(){
   const g=DATA.grid, D=DATA.window_days;
+  const te=$("#thrExplain");
+  if(te){
+    te.innerHTML = DATA.peak_observed_c
+      ? `The <strong>${degF(DATA.threshold_c)}</strong> threshold is not hardcoded — the
+         pipeline samples afternoon peaks across the window, finds the hottest reading
+         (<strong>${degFC(DATA.peak_observed_c,1)}</strong>), and sets the threshold a
+         margin below it. Too close to the peak and the exceedance layer interpolates
+         into negative hours; too far below and every tile saturates at the full window
+         with nothing left to rank. The chosen layer is checked for both before it is
+         used, and adjusted if either shows up. Point this at another US city and it
+         picks its own threshold.`
+      : `Threshold fixed at <strong>${degF(DATA.threshold_c)}</strong>.`;
+  }
   $("#ctxStats").innerHTML=[
     ["Coolest ground", fmt(g.min/D,1)+" h/day", "hours above the danger line"],
     ["Hottest ground", fmt(g.max/D,1)+" h/day", "same city, same days"],
@@ -740,6 +799,72 @@ function renderContext(){
   ].map(([k,v,n])=>`<div class="stat"><div class="k">${k}</div>
      <div class="v mono">${v}</div><div class="n">${n}</div></div>`).join("");
 }
+/* ---------- check any location ---------- */
+let sortedVals=null, queryPt=null;
+function pct(v){
+  if(!sortedVals) sortedVals=[...DATA.grid.val].sort((a,b)=>a-b);
+  let lo=0,hi=sortedVals.length;
+  while(lo<hi){const m=(lo+hi)>>1; if(sortedVals[m]<v) lo=m+1; else hi=m;}
+  return lo/sortedVals.length*100;
+}
+function nearestTile(lat,lon){
+  const g=DATA.grid; let bi=-1, bd=Infinity;
+  for(let i=0;i<g.lat.length;i++){
+    const dy=g.lat[i]-lat, dx=(g.lon[i]-lon)*0.83;
+    const d=dy*dy+dx*dx;
+    if(d<bd){bd=d; bi=i;}
+  }
+  // rough degrees -> km, for an "outside the area" warning
+  return {i:bi, km:Math.sqrt(bd)*111, val:g.val[bi], lat:g.lat[bi], lon:g.lon[bi]};
+}
+function lookup(lat,lon){
+  const D=DATA.window_days, t=nearestTile(lat,lon);
+  queryPt={lat,lon}; drawPins();
+  const perDay=t.val/D;
+  const sites=DATA.sites.filter(s=>s.exc!=null);
+  const hotter=sites.filter(s=>s.exc>t.val).length;
+  const best=sites[sites.length-1], worst=sites[0];
+  const vsBest=(t.val-best.exc)/D;
+  const p=pct(t.val);
+
+  let rank;
+  if(hotter===0) rank=`hotter than every site in your register`;
+  else if(hotter===sites.length) rank=`cooler than every site in your register`;
+  else rank=`hotter than ${sites.length-hotter} of your ${sites.length} sites`;
+
+  $("#lkResult").innerHTML =
+    `<div class="lbl">${lat.toFixed(4)}, ${lon.toFixed(4)}</div>
+     <div class="big">${fmt(perDay,1)} h/day</div>
+     <div class="lbl">above ${degF(DATA.threshold_c)}</div>
+     <div class="row">Hotter than <strong>${fmt(p,0)}%</strong> of the study area.</div>
+     <div class="row">${rank[0].toUpperCase()+rank.slice(1)}.</div>
+     <div class="row">${
+        Math.abs(vsBest)<0.05
+          ? `About the same as ${best.name}, your coolest site.`
+        : vsBest>0
+          ? `<strong>+${fmt(vsBest,1)} h/day</strong> versus your coolest site (${best.name}).`
+          : `<strong>${fmt(vsBest,1)} h/day</strong> — cooler than ${best.name}, your current best.`
+     }</div>`
+    + (t.km>0.6 ? `<div class="warn">That point is ${fmt(t.km,1)} km outside the measured
+        area — showing the closest measured tile.</div>` : "");
+}
+$("#lkGo").onclick=()=>{
+  const m=$("#lkInput").value.trim().match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+  if(!m){ $("#lkResult").innerHTML='<div class="warn">Enter coordinates as '
+    +'<span class="mono">latitude, longitude</span> — e.g. 33.4484, -112.0740</div>'; return; }
+  lookup(parseFloat(m[1]), parseFloat(m[2]));
+};
+$("#lkInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#lkGo").click(); });
+$("#mapwrap").addEventListener("click",e=>{
+  if(!mapBox) return;
+  const r=$("#map").getBoundingClientRect();
+  const {cw,ch,lon0,lon1,lat0,lat1}=mapBox;
+  const lon=lon0+((e.clientX-r.left)/r.width)*(lon1-lon0);
+  const lat=lat0+(1-(e.clientY-r.top)/r.height)*(lat1-lat0);
+  $("#lkInput").value=`${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  lookup(lat,lon);
+});
+
 function renderFoot(){
   const g=DATA.generated_at?new Date(DATA.generated_at):null;
   $("#foot").innerHTML =

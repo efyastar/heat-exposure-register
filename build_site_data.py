@@ -43,9 +43,17 @@ FRESH = os.environ.get("FRESH", "") == "1"
 HTTP_TIMEOUT = float(os.environ.get("HTTP_TIMEOUT", "180"))
 ATTEMPTS = int(os.environ.get("ATTEMPTS", "4"))
 
-# 38C=100F, 40C=104F. 43C was dropped: it returned negative hours, an
-# interpolation artefact past the edge of the data.
-THRESHOLDS_C = [38.0, 40.0]
+# The danger threshold is chosen from the data rather than hardcoded, so this
+# pipeline works outside Phoenix. See probe_peak() and pick_threshold().
+#   - too close to the observed max -> exceedance interpolates and goes negative
+#   - too far below it -> every tile saturates at the full window and nothing ranks
+# Set AUTO_THRESHOLD=0 to force FALLBACK_THRESHOLDS_C instead.
+AUTO_THRESHOLD = os.environ.get("AUTO_THRESHOLD", "1") == "1"
+THRESHOLD_MARGIN_C = float(os.environ.get("THRESHOLD_MARGIN_C", "2.0"))
+PEAK_HOUR = os.environ.get("PEAK_HOUR", "15:00")   # local; hottest part of the day
+FALLBACK_THRESHOLDS_C = [38.0, 40.0]
+CONTEXT_OFFSET_C = 2.0     # the secondary, lower threshold shown for context
+MAX_THRESHOLD_TRIES = 3
 WINDOW_START = os.environ.get("WINDOW_START", "2026-07-20")
 WINDOW_END = os.environ.get("WINDOW_END", "2026-08-19")
 PROFILE_DAY = os.environ.get("PROFILE_DAY", "2026-08-03")
@@ -138,6 +146,62 @@ def values_by_tile(tiles, key):
     return {t["properties"]["tile_id"]: t["properties"].get(key) for t in tiles}
 
 
+def probe_peak(client, aoi, dates):
+    """Hottest temperature actually observed, from a few sample afternoons.
+
+    One cheap single-hour call per date. Cheaper and more reliable than guessing
+    a threshold and discovering after a 31-day exceedance run that it saturated.
+    """
+    peaks = []
+    for d in dates:
+        res = call_with_retry(
+            lambda dd=d: client.create_heatmap(
+                polygon_aoi=aoi, granularity=GRAN, start_date=dd,
+                start_time=PEAK_HOUR, filter_type=1, verbose=False,
+            )["result"],
+            f"peak {d}",
+        )
+        if not tiles_of(res):
+            log(f"    {d} {PEAK_HOUR}: no tiles")
+            continue
+        st = (res.get("stats_data") or {}).get("temperature_stats") or {}
+        if "maximum" in st:
+            peaks.append(st["maximum"])
+            log(f"    {d} {PEAK_HOUR}: max {st['maximum']:.2f}C  "
+                f"mean {st['mean']:.2f}C  min {st['minimum']:.2f}C")
+    return max(peaks) if peaks else None
+
+
+def pick_threshold(peak):
+    """A threshold a safe margin below the observed peak, rounded to 0.5 C."""
+    return round((peak - THRESHOLD_MARGIN_C) * 2) / 2
+
+
+def classify_layer(vals, window_hours):
+    """Is this exceedance layer usable for ranking?"""
+    lo, hi = min(vals), max(vals)
+    if lo < 0:
+        return "too_high"          # interpolating past the edge of the data
+    if hi - lo < 0.5:
+        if hi >= window_hours * 0.98:
+            return "too_low"       # every tile saturated at the full window
+        return "flat"              # no spread to rank on
+    return "ok"
+
+
+def exceedance_layer(client, aoi, thr):
+    res = call_with_retry(
+        lambda t=thr: client.create_heatmap(
+            polygon_aoi=aoi, granularity=GRAN,
+            start_date=WINDOW_START, end_date=WINDOW_END, filter_type=4,
+            analytic_type="exceedance", threshold=t, direction="above",
+            verbose=False, timeout=900,
+        )["result"],
+        f">{thr}C",
+    )
+    return tiles_of(res)
+
+
 def save(data):
     tmp = OUT_PATH + ".tmp"
     with open(tmp, "w") as fh:
@@ -169,54 +233,118 @@ def main():
         "sites": SITES,
         "window": {"start": WINDOW_START, "end": WINDOW_END},
         "profile_day": PROFILE_DAY,
-        "thresholds_c": THRESHOLDS_C,
+        "thresholds_c": None,
         "exposure": {}, "hourly": {}, "forecast": {},
         "site_tile": None, "notes": [],
     }
     data["generated_at"] = datetime.now(PHOENIX_TZ).isoformat()
     site_tile = data.get("site_tile")
 
-    # --- 1. exposure -------------------------------------------------------
-    log(f"\nexposure: hours above threshold, {WINDOW_START} .. {WINDOW_END}")
-    for thr in THRESHOLDS_C:
-        key = str(thr)
-        if key in data["exposure"]:
-            log(f"  >{thr}C  already done, skipping")
-            continue
+    # --- 1. threshold selection -------------------------------------------
+    days = (datetime.strptime(WINDOW_END, "%Y-%m-%d")
+            - datetime.strptime(WINDOW_START, "%Y-%m-%d")).days + 1
+    window_hours = days * 24
+    data["window_days"] = days
 
-        log(f"  >{thr}C ...")
-        res = call_with_retry(
-            lambda t=thr: client.create_heatmap(
-                polygon_aoi=aoi, granularity=GRAN,
-                start_date=WINDOW_START, end_date=WINDOW_END, filter_type=4,
-                analytic_type="exceedance", threshold=t, direction="above",
-                verbose=False, timeout=900,
-            )["result"],
-            f">{thr}C",
-        )
-        tiles = tiles_of(res)
+    thresholds = data.get("thresholds_c")
+    if not thresholds:
+        if AUTO_THRESHOLD:
+            log(f"\nchoosing a threshold from the data "
+                f"(sampling {PEAK_HOUR} on three days)")
+            sample_dates = [WINDOW_START, PROFILE_DAY, WINDOW_END]
+            peak = probe_peak(client, aoi, sample_dates)
+            if peak is None:
+                log("  peak probe failed — falling back to fixed thresholds")
+                thresholds = list(FALLBACK_THRESHOLDS_C)
+            else:
+                primary = pick_threshold(peak)
+                log(f"  observed peak {peak:.2f}C -> starting threshold "
+                    f"{primary:.1f}C (peak minus {THRESHOLD_MARGIN_C:.1f})")
+                data["peak_observed_c"] = round(peak, 2)
+                thresholds = [primary]
+        else:
+            thresholds = list(FALLBACK_THRESHOLDS_C)
+
+    # --- 2. exposure, with the threshold validated against the result ------
+    log(f"\nexposure: hours above threshold, {WINDOW_START} .. {WINDOW_END} "
+        f"({days} days)")
+
+    primary_thr = thresholds[0]
+    tries = 0
+    while tries < MAX_THRESHOLD_TRIES:
+        key = str(primary_thr)
+        if key in data["exposure"]:
+            log(f"  >{primary_thr}C  already done, skipping")
+            break
+
+        log(f"  >{primary_thr}C ...")
+        tiles = exceedance_layer(client, aoi, primary_thr)
         if not tiles:
-            log(f"    >{thr}C returned no tiles — skipping")
-            continue
+            log(f"    >{primary_thr}C returned no tiles — skipping")
+            break
 
         if site_tile is None:
             site_tile = assign_tiles(SITES, tiles)
             data["site_tile"] = site_tile
             log(f"    mapped {len(site_tile)} sites to tiles")
 
-        vals = values_by_tile(tiles, "value")
-        per_site = {sid: vals.get(tid) for sid, tid in site_tile.items()}
-        data["exposure"][key] = per_site
-        good = [v for v in per_site.values() if v is not None]
-        if good:
-            log(f"    {len(tiles)} tiles | sites {min(good):.2f}-{max(good):.2f} hours")
-        save(data)
+        vals = [t["properties"]["value"] for t in tiles
+                if t["properties"].get("value") is not None]
+        verdict = classify_layer(vals, window_hours)
+        log(f"    {len(tiles)} tiles | {min(vals):.2f}-{max(vals):.2f} h "
+            f"| spread {max(vals) - min(vals):.2f} | {verdict}")
+
+        if verdict == "ok":
+            by_tile = values_by_tile(tiles, "value")
+            data["exposure"][key] = {sid: by_tile.get(tid)
+                                     for sid, tid in site_tile.items()}
+            data["threshold_c"] = primary_thr
+            save(data)
+            break
+
+        tries += 1
+        if tries >= MAX_THRESHOLD_TRIES:
+            log(f"    still {verdict} after {tries} tries — keeping "
+                f"{primary_thr}C anyway")
+            by_tile = values_by_tile(tiles, "value")
+            data["exposure"][key] = {sid: by_tile.get(tid)
+                                     for sid, tid in site_tile.items()}
+            data["threshold_c"] = primary_thr
+            save(data)
+            break
+
+        if verdict == "too_high":
+            primary_thr -= 1.0
+            log(f"    negative hours — interpolating past the data. "
+                f"Lowering to {primary_thr}C")
+        else:
+            primary_thr += 1.0
+            log(f"    no spread to rank on ({verdict}). "
+                f"Raising to {primary_thr}C")
 
     if site_tile is None:
         sys.exit("ERROR: no exposure layer succeeded. Re-run to retry, or shorten "
                  "the window with WINDOW_START/WINDOW_END.")
 
-    # --- 2. hourly profile -------------------------------------------------
+    # A lower threshold, purely for context in the interface.
+    context_thr = primary_thr - CONTEXT_OFFSET_C
+    ckey = str(context_thr)
+    if ckey not in data["exposure"]:
+        log(f"  >{context_thr}C (context) ...")
+        tiles = exceedance_layer(client, aoi, context_thr)
+        if tiles:
+            by_tile = values_by_tile(tiles, "value")
+            data["exposure"][ckey] = {sid: by_tile.get(tid)
+                                      for sid, tid in site_tile.items()}
+            vals = [v for v in data["exposure"][ckey].values() if v is not None]
+            log(f"    sites {min(vals):.2f}-{max(vals):.2f} hours")
+            save(data)
+
+    data["thresholds_c"] = [primary_thr, context_thr]
+    data["context_threshold_c"] = context_thr
+    save(data)
+
+    # --- 3. hourly profile -------------------------------------------------
     log(f"\nhourly profile for {PROFILE_DAY}")
     for hour in range(24):
         hkey = f"{hour:02d}"
@@ -243,7 +371,7 @@ def main():
         log(f"  {hkey}:00  mean {sum(sample) / len(sample):.2f}C")
         save(data)
 
-    # --- 3. forecast -------------------------------------------------------
+    # --- 4. forecast -------------------------------------------------------
     now = datetime.now(PHOENIX_TZ)
     log("\nforecast: walking forward until the API returns empty")
     data["forecast"] = {}          # always refresh; forecasts go stale
@@ -276,6 +404,9 @@ def main():
 
     save(data)
     log(f"\nwrote {OUT_PATH}")
+    log(f"  threshold       : {data.get('threshold_c')} C"
+        + (f"  (observed peak {data['peak_observed_c']} C)"
+           if data.get("peak_observed_c") else ""))
     log(f"  exposure layers : {sorted(data['exposure'].keys())}")
     log(f"  hourly hours    : {len(data['hourly'])}/24")
     log(f"  forecast hours  : {len(data['forecast'])}")
@@ -286,7 +417,7 @@ def main():
         pass
 
     missing = [h for h in range(24) if f"{h:02d}" not in data["hourly"]]
-    if missing or len(data["exposure"]) < len(THRESHOLDS_C):
+    if missing or len(data["exposure"]) < 2:
         log("\nSome pieces are missing. Just run the script again — "
             "it resumes and only retries what failed.")
 
