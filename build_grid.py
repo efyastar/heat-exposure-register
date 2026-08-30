@@ -25,9 +25,34 @@ from build_site_data import (  # noqa: E402
     WINDOW_START, WINDOW_END, GRAN,
 )
 
-OUT_PATH = os.environ.get("OUT", "grid_exc40.geojson")
-THRESHOLD = float(os.environ.get("THRESHOLD", "40.0"))
+OUT_PATH = os.environ.get("OUT", "grid_exceedance.geojson")
 HTTP_TIMEOUT = float(os.environ.get("HTTP_TIMEOUT", "180"))
+SITE_DATA = os.environ.get("SITES", "site_data.json")
+
+
+def resolve_threshold():
+    """Use whatever threshold build_site_data.py settled on.
+
+    Hardcoding this is how the map and the register end up measuring different
+    things: the register would rank sites at one threshold while the map shaded
+    them at another, and the two would disagree on screen.
+    """
+    override = os.environ.get("THRESHOLD")
+    if override:
+        return float(override)
+    try:
+        with open(SITE_DATA) as fh:
+            thr = json.load(fh).get("threshold_c")
+        if thr is not None:
+            print(f"threshold {thr}C (from {SITE_DATA})")
+            return float(thr)
+    except Exception as exc:
+        print(f"could not read {SITE_DATA} ({type(exc).__name__})")
+    print("falling back to 40.0C")
+    return 40.0
+
+
+THRESHOLD = resolve_threshold()
 
 
 def main():

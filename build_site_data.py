@@ -393,6 +393,8 @@ def main():
                 f"Forecast reached +{h - 1}h from {now:%Y-%m-%d %H:%M} local; "
                 f"the API returns an empty tile list beyond that rather than an error."
             )
+            data["forecast_horizon_h"] = h - 1
+            data["forecast_capped_by_probe"] = False
             break
 
         vals = values_by_tile(tiles, "average_temperature")
@@ -400,7 +402,13 @@ def main():
         data["forecast"][stamp] = row
         sample = [v for v in row.values() if v is not None]
         log(f"  +{h}h ({when:%H:00})  mean {sum(sample) / len(sample):.2f}C")
+        data["forecast_horizon_h"] = h
+        data["forecast_capped_by_probe"] = True   # cleared above if we hit an empty
         save(data)
+
+    if data.get("forecast_capped_by_probe"):
+        log(f"  stopped at the probe limit, not an empty response — the real "
+            f"horizon may be longer than +{data['forecast_horizon_h']}h")
 
     save(data)
     log(f"\nwrote {OUT_PATH}")

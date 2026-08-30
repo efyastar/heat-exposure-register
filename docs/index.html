@@ -355,13 +355,15 @@ details[open] summary { margin-bottom:10px; }
          horizon — 0.40&nbsp;°C at dawn, 0.11&nbsp;°C at +3&nbsp;h, 0.025&nbsp;°C at
          +6&nbsp;h. Forecasts tell you how dangerous the next few hours are; they cannot
          tell you which site is worse. Site ranking comes only from historical layers.</p>
-      <p><strong>The forecast window is shorter than documented, and it shrinks.</strong>
-         Advertised at 12 hours. Probing it at 7:31 AM reached 2 PM; probing again at
-         10 AM also reached 2 PM. It is a fixed afternoon cutoff, not a rolling horizon —
-         so by mid-afternoon there is no forecast left. Past the cutoff it returns an empty tile
-         list with a <em>success</em> status — intended behaviour, since the request is
-         valid and there is simply no data for that time, but easy to misread as "no heat
-         anywhere" if you do not check tile count. This page checks.</p>
+      <p><strong>The forecast horizon varies with when you ask.</strong> Advertised at
+         12 hours. Probed at 7:31 AM it reached 2 PM, about six hours out; probed at
+         10 AM it still stopped at 2 PM, about four hours out; probed at 10:30 PM it ran
+         past 10 the next morning. So it is neither a clean rolling window nor a single
+         fixed cutoff, and anything built on it has to discover its own horizon rather
+         than assume one. This pipeline walks forward hour by hour until the API stops
+         returning tiles. Past that point it returns an empty tile list with a
+         <em>success</em> status, which is intended behaviour but easy to misread as
+         "no heat anywhere" if you do not check tile count. This page checks.</p>
       <p><strong>High thresholds degrade.</strong> At 43&nbsp;°C the exceedance layer
          returned negative hours — interpolation past the edge of the data.
          The threshold used here sits inside the reliable band.</p>
@@ -578,12 +580,11 @@ function renderForecast(){
   host.appendChild(svg);
   const lastH=+times[times.length-1].slice(11,13);
   $("#forecastNote").innerHTML =
-    `Forecast runs to <strong>${clock(lastH)}</strong> — ${times.length-1} hours from the
-     last update. Testing showed the provider's forecast stops at a fixed hour each
-     afternoon rather than always reaching a set number of hours ahead, so this window
-     shortens as the day goes on. Past the cutoff it returns an empty result with a
-     success status rather than an error, so the page checks tile count instead of
-     reading an empty response as zero heat.`;
+    `Forecast runs to <strong>${clock(lastH)}</strong>, ${times.length-1} hours past the
+     last update. That horizon varies with when the data is pulled: in testing it ran
+     anywhere from four hours to more than eleven. The pipeline walks forward until the
+     API stops returning tiles rather than assuming a fixed window, and checks tile
+     count so an empty response is never read as zero heat.`;
 }
 
 /* ---------- register ---------- */

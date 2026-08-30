@@ -38,10 +38,10 @@ method — is for whoever wants to check the working.
 
 ## The finding that matters
 
-Across the study area, ground-level exposure above 40 °C (104 °F) ranges from
-**3.6 to 6.1 hours per day**. Two crews working the same city, on the same days,
-differ by **two and a half hours of dangerous heat daily** — 77 hours across a
-31-day summer window — purely by where they are standing.
+Across the study area, ground-level exposure above 40.5 °C (105 °F) ranges from
+**2.2 to 4.7 hours per day**. Two crews working the same city, on the same days,
+differ by nearly **two and a half hours of dangerous heat daily** — 75 hours across
+a 31-day summer window — purely by where they are standing.
 
 Nobody can act on that today, because at city-wide resolution the difference
 does not exist.
@@ -102,20 +102,29 @@ Mountain, spread was 0.94 °C. Twelve times more. Choose an area that crosses re
 land-use boundaries or the data will look flat.
 
 **Snapshots barely discriminate; duration does.** Peak temperature separates sites
-by under 1 °C. Hours-above-threshold separates them by 77 hours. The register is
+by under 1 °C. Hours-above-threshold separates them by 75 hours. The register is
 built on `analytic_type="exceedance"` for that reason, and it is also the more
 actionable metric — *"two and a half more dangerous hours a day"* beats *"0.4 °C
 warmer"* for anyone making a decision.
 
-**Threshold choice is narrow.** At 38 °C every tile returned the full 24 hours
-(saturated). At 43 °C tiles returned **negative hours** — interpolation past the
-edge of the data. 40 °C sits inside the reliable band and happens to be a
-meaningful safety line (104 °F).
+**The usable threshold band is narrow, so the pipeline finds it rather than
+guessing.** At 38 °C every tile saturated at the full window; at 43 °C tiles came
+back with **negative hours**, interpolation past the edge of the data. Both extremes
+are useless for ranking, and neither errors. So `build_site_data.py` samples
+afternoon peaks first, sets a threshold a margin below the observed maximum, then
+checks the resulting layer for saturation or negative values and steps the threshold
+until it finds one that discriminates. For this window it observed a peak of
+42.35 °C and settled on **40.5 °C (105 °F)**. Point it at another US city and it
+runs the same search there.
 
-**The forecast window is shorter than documented, and it shrinks.** Advertised as
-12 hours ahead. Probed at 07:31 it reached 14:00; probed again at 10:00 it also
-reached 14:00. It is a **fixed afternoon cutoff, not a rolling horizon** — by
-mid-afternoon there is no forecast left at all.
+**The forecast horizon is not a reliable 12 hours; it varies with when you ask.**
+Probed at 07:31 it reached 14:00, about 6 hours out. Probed again at 10:00 it
+still stopped at 14:00, about 4 hours out. Probed at 22:33 it ran past 10:00 the
+next morning, at least 11 hours. So it is neither a clean rolling 12-hour window
+nor a single fixed cutoff — on that morning the available data simply ended at
+14:00, and by evening it extended much further. Anything built on it has to
+discover its own horizon at runtime rather than assume one, which is what the
+pipeline does: it walks forward hour by hour until the API stops returning tiles.
 
 **Beyond that cutoff the API returns empty rather than erroring.** The request
 succeeds, status reads `completed`, `stats_data` comes back with `activity_id` and
@@ -174,8 +183,9 @@ input.
 | HCUP 2020 via CAP | Cost per heat illness case | Public |
 
 Study area: ~62 km² of Phoenix, roughly 13 km north–south by 5 km across, at 100 m
-tiles (6,137 of them). Exposure window 2026-07-20 to 2026-08-19. Hourly profile
-from 2026-08-03.
+tiles (6,137 of them). Exposure window 2026-07-20 to 2026-08-19, threshold 40.5 °C
+chosen from the data. Hourly profile from 2026-08-03. The thirteen sites span
+69.4 to 144.5 hours above threshold — the full range present in the grid.
 
 The thirteen demo sites are **real public locations**, picked off the measured grid
 so they span the city's full exposure range rather than clustering. They stand in
@@ -231,8 +241,8 @@ unusable in a live demo and would put an API key in a public deployment. All dat
 is precomputed. The page loads instantly and cannot fail because a request timed
 out while someone is watching.
 
-**Fahrenheit, not Celsius.** The audience is a Phoenix job site. 40 °C means
-nothing there; 104 °F means everything. Celsius appears in brackets where
+**Fahrenheit, not Celsius.** The audience is a Phoenix job site. 40.5 °C means
+nothing there; 105 °F means everything. Celsius appears in brackets where
 precision matters.
 
 **Hours per day, not hours per window.** 5.9 is a number a person feels. 182 is

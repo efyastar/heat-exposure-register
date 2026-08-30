@@ -21,3 +21,4 @@ heat_model.joblib
 
 # macOS
 .DS_Store
+grid_exceedance.geojson

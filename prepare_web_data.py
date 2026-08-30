@@ -16,7 +16,7 @@ import os
 from statistics import mean
 
 SITE_PATH = os.environ.get("SITES", "site_data.json")
-GRID_PATH = os.environ.get("GRID", "grid_exc40.geojson")
+GRID_PATH = os.environ.get("GRID", "grid_exceedance.geojson")
 OUT_DIR = os.environ.get("OUT_DIR", "web")
 OUT_PATH = os.path.join(OUT_DIR, "data.json")
 
@@ -49,7 +49,11 @@ def danger_window(hourly, threshold):
 def main():
     with open(SITE_PATH) as fh:
         sd = json.load(fh)
-    with open(GRID_PATH) as fh:
+
+    grid_path = GRID_PATH
+    if not os.path.exists(grid_path) and os.path.exists("grid_exc40.geojson"):
+        grid_path = "grid_exc40.geojson"      # older filename
+    with open(grid_path) as fh:
         grid = json.load(fh)
 
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -70,6 +74,20 @@ def main():
     print(f"threshold: {threshold} C"
           + (f"  (observed peak {sd['peak_observed_c']} C)"
              if sd.get("peak_observed_c") else "  (fixed)"))
+
+    # The map and the register must measure the same thing, or clicking a site
+    # on the map contradicts that site's own row in the table.
+    grid_thr = grid.get("threshold_c")
+    if grid_thr is not None and abs(float(grid_thr) - threshold) > 1e-6:
+        raise SystemExit(
+            f"\nERROR: threshold mismatch.\n"
+            f"  sites were built at {threshold} C\n"
+            f"  the grid ({grid_path}) was built at {grid_thr} C\n"
+            f"The map and the register would disagree on screen.\n"
+            f"Rebuild the grid:  python3 build_grid.py"
+        )
+    if grid_thr is None:
+        print(f"  warning: {grid_path} records no threshold; assuming it matches")
 
     # --- sites -------------------------------------------------------------
     hourly_raw = sd.get("hourly", {})
