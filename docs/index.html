@@ -171,6 +171,30 @@ summary { cursor:pointer; font-size:13.5px; color:var(--text-secondary); font-we
 details[open] summary { margin-bottom:10px; }
 .foot { color:var(--text-muted); font-size:12.5px; margin-top:26px; }
 .err { color:var(--critical); font-size:14px; }
+
+/* ---- presenter mode (?demo=1) ---- */
+#demoBar { position:fixed; left:0; right:0; bottom:0; z-index:200;
+  background:rgba(12,12,11,.94); color:#fff; padding:22px 34px 26px;
+  display:none; backdrop-filter:blur(6px);
+  box-shadow:0 -8px 40px rgba(0,0,0,.35); }
+#demoBar.on { display:block; }
+#demoText { font-size:27px; line-height:1.3; font-weight:600; letter-spacing:-0.01em;
+  max-width:1000px; margin:0 auto; }
+#demoSub { font-size:17px; line-height:1.4; color:#c3c2b7; max-width:1000px;
+  margin:9px auto 0; font-weight:400; }
+#demoProg { position:fixed; left:0; top:0; height:4px; width:0%;
+  background:#3987e5; z-index:201; transition:width .25s linear; display:none; }
+#demoProg.on { display:block; }
+#demoStart { position:fixed; inset:0; z-index:202; display:none;
+  align-items:center; justify-content:center; flex-direction:column; gap:14px;
+  background:rgba(12,12,11,.93); color:#fff; text-align:center; padding:30px; }
+#demoStart.on { display:flex; }
+#demoStart h3 { font-size:30px; margin:0; font-weight:650; }
+#demoStart p { color:#c3c2b7; margin:0; font-size:16px; max-width:520px; }
+#demoStart kbd { background:#232322; border:1px solid #4a4a47; border-radius:6px;
+  padding:3px 9px; font:inherit; font-size:15px; }
+body.demo-running { cursor:none; }
+body.demo-running #theme { display:none; }
 </style>
 </head>
 <body>
@@ -386,6 +410,14 @@ details[open] summary { margin-bottom:10px; }
   <div class="foot" id="foot"></div>
 </div>
 
+
+<div id="demoProg"></div>
+<div id="demoStart">
+  <h3>Presenter mode</h3>
+  <p>Start your screen recorder, then press <kbd>Space</kbd>. The page will drive
+     itself for about two and a half minutes. Press <kbd>Esc</kbd> to stop.</p>
+</div>
+<div id="demoBar"><div id="demoText"></div><div id="demoSub"></div></div>
 <div class="tip" id="tip" role="status" aria-live="polite"></div>
 
 <script>
@@ -908,6 +940,139 @@ function renderFoot(){
      temperatures are 2 m ambient air, shown in °F · built on the FortyGuard Temperature
      API for Hackathon'26.`;
 }
+
+/* ---------- presenter mode ---------- */
+(function(){
+  if (!new URLSearchParams(location.search).has("demo")) return;
+
+  const bar=$("#demoBar"), txt=$("#demoText"), sub=$("#demoSub"),
+        prog=$("#demoProg"), splash=$("#demoStart");
+  let timer=null, running=false;
+
+  const goto_ = sel => {
+    const el=document.querySelector(sel);
+    if(el) el.scrollIntoView({behavior:"smooth", block:"start"});
+  };
+  const top_ = () => scrollTo({top:0, behavior:"smooth"});
+
+  const STEPS = [
+    { t:"Phoenix summers kill outdoor workers.",
+      s:"Construction, landscaping, roofing, delivery.", ms:6500, go:top_ },
+
+    { t:"Most foremen decide using a weather app.",
+      s:"One temperature, measured at the airport, for the whole metro.", ms:7500 },
+
+    { t:"It shouldn't be one number.",
+      s:"This is a heat exposure register for outdoor crews, built on street-level data.",
+      ms:7500 },
+
+    { t:"It opens with a decision, not a chart.",
+      s:"And it says when the data was captured rather than pretending to be live.",
+      ms:8000, go:()=>goto_("#action") },
+
+    { t:"Green is safe. Red is dangerous.",
+      s:"Hour by hour. Readable at arm's length, with no training.", ms:8000 },
+
+    { t:"On a hot day, work stops at 10 in the morning.",
+      s:"It isn't safe again until eight at night. Ten hours lost.", ms:8000 },
+
+    { t:"Their sites, ranked worst first.",
+      s:"", ms:7000, go:()=>goto_("#register") },
+
+    { t:"The industrial corridor: 4.7 dangerous hours a day.",
+      s:"The mountain slope: 2.2.", ms:8000 },
+
+    { t:"Two and a half hours difference. Every day.",
+      s:"Same city, same days, same crews. 75 hours across a month.", ms:8500 },
+
+    { t:"Invisible on a city-wide forecast.",
+      s:"Which is why nobody schedules around it today.", ms:7000 },
+
+    { t:"It isn't a fixed list. Check anywhere.",
+      s:"", ms:6000, go:()=>goto_("#mapwrap") },
+
+    { t:"Click the map, or type coordinates.",
+      s:"", ms:7000, go:()=>{
+        const i=$("#lkInput"); if(i){ i.value="33.4029, -112.0823"; $("#lkGo").click(); } } },
+
+    { t:"Now the part that matters most.",
+      s:"This project started as something else.", ms:7000,
+      go:()=>{ const d=document.querySelectorAll("details")[0];
+               if(d && !d.open) d.open=true; goto_("details"); } },
+
+    { t:"The plan was a cooling simulator.",
+      s:"Move a tree canopy slider, predict the temperature drop.", ms:7500 },
+
+    { t:"I tested whether that was defensible first.",
+      s:"7,347 tiles of measured heat joined to OpenStreetMap land cover. Whole districts held out, so nothing could memorise a neighbourhood.",
+      ms:10000 },
+
+    { t:"Coordinates alone: R² 0.85.",
+      s:"Adding buildings, parks, roads and trees: minus 0.009. It made the model worse.",
+      ms:9500 },
+
+    { t:"Building density scored exactly zero.",
+      s:"Repeating it against pre-dawn temperature gave the same answer.", ms:8000 },
+
+    { t:"The data knows where heat is. Not why.",
+      s:"A canopy slider would have moved a number the data can't justify.", ms:8500 },
+
+    { t:"So I built what the data actually supports.",
+      s:"Measured exposure. No causal claims.", ms:7500,
+      go:()=>goto_("#costStats") },
+
+    { t:"Cost per case is sourced. Incidence is your assumption.",
+      s:"", ms:7000, go:()=>{ const el=$("#inc");
+        if(el){ el.value=75; el.dispatchEvent(new Event("input")); } } },
+
+    { t:"The dollars move. The ranking never does.",
+      s:"That ordering is what the measurement supports. The level is your input.",
+      ms:9000, go:()=>{ const el=$("#inc");
+        if(el){ el.value=20; el.dispatchEvent(new Event("input")); } } },
+
+    { t:"Heat Exposure Register",
+      s:"Built on the FortyGuard Temperature API.", ms:6000, go:top_ },
+  ];
+
+  const TOTAL = STEPS.reduce((a,b)=>a+b.ms, 0);
+  console.log(`presenter mode: ${STEPS.length} steps, ${(TOTAL/1000).toFixed(0)}s`);
+
+  function stop(){
+    running=false; clearTimeout(timer);
+    bar.classList.remove("on"); prog.classList.remove("on");
+    document.body.classList.remove("demo-running");
+    splash.classList.add("on");
+  }
+
+  function run(i, elapsed){
+    if(!running) return;
+    if(i >= STEPS.length){ stop(); return; }
+    const st = STEPS[i];
+    txt.textContent = st.t;
+    sub.textContent = st.s || "";
+    sub.style.display = st.s ? "block" : "none";
+    prog.style.width = (elapsed / TOTAL * 100).toFixed(2) + "%";
+    if(st.go){ try { st.go(); } catch(e){ console.warn(e); } }
+    timer = setTimeout(()=>run(i+1, elapsed + st.ms), st.ms);
+  }
+
+  function start(){
+    if(running) return;
+    running = true;
+    splash.classList.remove("on");
+    bar.classList.add("on"); prog.classList.add("on");
+    document.body.classList.add("demo-running");
+    run(0, 0);
+  }
+
+  splash.classList.add("on");
+  addEventListener("keydown", e=>{
+    if(e.code === "Space"){ e.preventDefault(); start(); }
+    if(e.code === "Escape"){ stop(); }
+  });
+  splash.addEventListener("click", start);
+})();
+
 </script>
 </body>
 </html>
