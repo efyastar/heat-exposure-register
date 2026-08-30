@@ -64,7 +64,13 @@ p  { margin:0 0 12px; color:var(--text-secondary); }
                 color:var(--text-muted); font-weight:600; }
 .action .verdict { font-size:34px; line-height:1.15; font-weight:660;
                    letter-spacing:-0.02em; margin:6px 0 8px; }
-.action .because { font-size:15px; color:var(--text-secondary); margin:0 0 18px; max-width:62ch; }
+.action .because { font-size:15px; color:var(--text-secondary); margin:0 0 14px; max-width:62ch; }
+.stale { display:flex; gap:9px; align-items:flex-start; font-size:13px;
+  background:var(--surface-2); border:1px solid var(--border-strong);
+  border-radius:9px; padding:10px 12px; margin:0 0 16px; color:var(--text-secondary); }
+.stale strong { color:var(--text-primary); }
+.stale .mark { flex:0 0 auto; font-weight:700; color:var(--warning); }
+.stale:empty { display:none; }
 .action .because strong { color:var(--text-primary); }
 .todo { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
         gap:1px; background:var(--border); border:1px solid var(--border);
@@ -185,6 +191,7 @@ details[open] summary { margin-bottom:10px; }
       <div class="when" id="actionWhen">—</div>
       <div class="verdict" id="actionVerdict">—</div>
       <p class="because" id="actionBecause"></p>
+      <div class="stale" id="staleNote"></div>
       <div class="todo" id="actionTodo"></div>
       <div class="hours" id="hourStrip"></div>
       <div class="hourlbl"><span>midnight</span><span>6 AM</span><span>noon</span><span>6 PM</span><span>11 PM</span></div>
@@ -481,17 +488,45 @@ function renderAction(){
   const w=worst.window;
   if(w && w.end!=null) resumeAt=(w.end+1)%24;
 
-  $("#actionStrip").style.background=strip;
-  $("#actionWhen").textContent = times.length
-    ? new Date(times[0]+":00").toLocaleDateString(undefined,
+  // This page ships precomputed data, so it cannot know today's date. Rather than
+  // labelling a stale snapshot "TODAY", work out how old it is and say so.
+  const dataDate = times.length ? new Date(times[0]+":00") : null;
+  const now2 = new Date();
+  const dayMs = 86400000;
+  const midnight = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const ageDays = dataDate
+    ? Math.round((midnight(now2) - midnight(dataDate)) / dayMs) : null;
+  const isToday = ageDays === 0;
+  const dateLabel = dataDate
+    ? dataDate.toLocaleDateString(undefined,
         {weekday:"long",month:"long",day:"numeric"}).toUpperCase()
     : "TYPICAL SUMMER DAY";
+
+  $("#actionStrip").style.background=strip;
+  $("#actionWhen").textContent = !dataDate ? dateLabel
+    : isToday ? dateLabel : `SNAPSHOT · ${dateLabel}`;
   $("#actionVerdict").textContent=verdict;
   $("#actionBecause").innerHTML=because;
 
+  const sn=$("#staleNote");
+  if(sn){
+    if(ageDays && ageDays > 0){
+      sn.innerHTML =
+        `<span class="mark">&#9432;</span><span>This demo runs on data captured
+         <strong>${ageDays === 1 ? "yesterday" : ageDays + " days ago"}</strong>, so the
+         verdict above describes that day rather than right now. Every number is a real
+         measurement, not a mock. Running the pipeline again refreshes it; a deployed
+         version would do that hourly. The site rankings below are historical by design
+         and do not go stale.</span>`;
+    } else {
+      sn.innerHTML = "";
+    }
+  }
+
   const perDayWorst = worst.exc/DATA.window_days;
   $("#actionTodo").innerHTML=[
-    ["Today", safeUntil!=null ? `Work until ${clock(safeUntil)}`
+    [isToday ? "Today" : "On the captured day",
+      safeUntil!=null ? `Work until ${clock(safeUntil)}`
         : (times.length ? verdict : "No forecast"),
       times.length ? `from the ${times.length}-hour forecast` : "feed unavailable"],
     ["On a typical hot day", w.start!=null?`Work before ${clock(w.start)}`:"All day",
