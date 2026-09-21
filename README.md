@@ -3,10 +3,10 @@
 **A shift-planning tool for outdoor work crews in Phoenix, built on street-level
 temperature data.**
 
-FortyGuard Hackathon'26 · Track 3 — Industrial & Enterprise
+FortyGuard Hackathon '26 · Track 3 — Industrial & Enterprise
 
-**Live demo:** _add your deployed URL here_
-**Video:** _add your video link here_
+**Live demo:** <ADD DEPLOYED URL>
+**Video:** <ADD VIDEO LINK>
 
 ---
 
