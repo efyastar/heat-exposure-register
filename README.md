@@ -5,8 +5,7 @@ temperature data.**
 
 FortyGuard Hackathon '26 · Track 3 — Industrial & Enterprise
 
-**Live demo:** <ADD DEPLOYED URL>
-**Video:** <ADD VIDEO LINK>
+**Video:** <(https://www.loom.com/share/1376b49b20ea453789c8f6c8b9fdfd0f)>
 
 ---
 
